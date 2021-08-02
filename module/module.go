@@ -16,6 +16,13 @@ type Module struct {
 	Version string
 }
 
+func (m *Module) String() string {
+	if m.Version == "" {
+		return m.Path
+	}
+	return fmt.Sprintf("%s@%s", m.Path, m.Version)
+}
+
 // Download downloads the go module into a temporary directory
 func (m *Module) Download() error {
 	goTool := host.FindGoTool()
@@ -28,7 +35,7 @@ func (m *Module) Download() error {
 
 	env := append(os.Environ(), "GO111MODULE=on", fmt.Sprintf("GOPATH=%s", dir))
 
-	cmd := exec.Command(goTool, "get", m.Path)
+	cmd := exec.Command(goTool, "get", m.String())
 	cmd.Env = env
 	if _, err := cmd.Output(); err != nil {
 		return err
