@@ -47,6 +47,8 @@ func main() {
 				return err
 			}
 
+			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
+
 			return nil
 		},
 	}
