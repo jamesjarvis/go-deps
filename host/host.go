@@ -1,7 +1,9 @@
 package host
 
 import (
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 )
@@ -21,4 +23,21 @@ func FindGoTool() string {
 		path += ".exe"
 	}
 	return path
+}
+
+func GetCacheDir() (string, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("unable to determine working directory: %w", err)
+	}
+	dir := path.Join(currentDir, "tmp")
+	return dir, nil
+}
+
+func MustGetCacheDir() string {
+	dir, err := GetCacheDir()
+	if err != nil {
+		panic(err)
+	}
+	return dir
 }

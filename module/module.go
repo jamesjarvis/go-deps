@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 
 	"github.com/jamesjarvis/go-deps/host"
 )
@@ -26,13 +25,7 @@ func (m *Module) String() string {
 // Download downloads the go module into a temporary directory
 func (m *Module) Download() error {
 	goTool := host.FindGoTool()
-
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("unable to determine working directory: %w", err)
-	}
-	dir := path.Join(currentDir, "tmp")
-
+	dir := host.MustGetCacheDir()
 	env := append(os.Environ(), "GO111MODULE=on", fmt.Sprintf("GOPATH=%s", dir))
 
 	cmd := exec.Command(goTool, "get", m.String())
