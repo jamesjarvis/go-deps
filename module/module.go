@@ -45,18 +45,22 @@ func (m *Module) Download() error {
 	cmd.Env = env
 	cmd.Dir = dir
 	out, err := cmd.Output()
-	if err != nil {
+	if err != nil && len(out) == 0 {
 		return fmt.Errorf("failed to download module: %s: %w", stderr.String(), err)
 	}
 
 	type module struct {
 		Path, Version, Info, GoMod, Zip, Dir, Sum, GoModSum string
+		Error string
 	}
 
 	mod := new(module)
 	err = json.Unmarshal(out, mod)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal output: %w", err)
+	}
+	if mod.Error != "" {
+		return fmt.Errorf("failed to download module: %s", mod.Error)
 	}
 
 	m.downloaded = true
