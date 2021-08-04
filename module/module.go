@@ -72,6 +72,7 @@ func (m *Module) Download() error {
 	return nil
 }
 
+// GetDependencies returns the direct dependencies of Module m.
 func (m *Module) GetDependencies() ([]*Module, error) {
 	if !m.downloaded {
 		return nil, fmt.Errorf("module %s has not been downloaded yet", m.String())
