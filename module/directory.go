@@ -32,6 +32,12 @@ func (d *Directory) Print() {
 		for version, mod := range vd.versions {
 			fmt.Printf("\tVERSION: %s\n", version)
 			fmt.Printf("\t\t%s\n", mod.String())
+			if len(mod.Deps) > 0 {
+				fmt.Printf("\t\t|\n")
+			}
+			for _, dep := range mod.Deps {
+				fmt.Printf("\t\t|---- %s\n", dep.String())
+			}
 		}
 	}
 }
