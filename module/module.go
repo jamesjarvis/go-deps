@@ -2,6 +2,7 @@ package module
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/modfile"
@@ -39,12 +41,12 @@ func (m *Module) String() string {
 }
 
 // Download downloads the go module into a temporary directory
-func (m *Module) Download() error {
+func (m *Module) Download(ctx context.Context) error {
 	goTool := host.FindGoTool()
 	dir := host.MustGetCacheDir()
 	env := append(os.Environ(), fmt.Sprintf("GOPATH=%s", dir))
 
-	cmd := exec.Command(goTool, "mod", "download", "-json", m.String())
+	cmd := exec.CommandContext(ctx, goTool, "mod", "download", "-json", m.String())
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	cmd.Env = env
@@ -69,13 +71,13 @@ func (m *Module) Download() error {
 		// we just do that here and retry.
 		// Download downloads the go module into a temporary directory
 		if strings.Contains(mod.Error, "not a known dependency") {
-			cmd := exec.Command(goTool, "get", m.String())
+			cmd := exec.CommandContext(ctx, goTool, "get", m.String())
 			cmd.Env = env
 			cmd.Dir = dir
 			if _, err := cmd.Output(); err != nil {
 				return fmt.Errorf("failed to run go get: %w", err)
 			}
-			return m.Download()
+			return m.Download(ctx)
 		}
 	
 		return fmt.Errorf("failed to download module: %s", mod.Error)
@@ -137,7 +139,7 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 	return modules, nil
 }
 
-func (m *Module) GetDependenciesRecursively() ([]*Module, error) {
+func (m *Module) GetDependenciesRecursively(ctx context.Context) ([]*Module, error) {
 	// We start a goroutine to pass the modules we want to fetch to.
 	// This goroutine is then self populated by the dependencies it then fetches.
 	// Each time it fetches one, it calls wg.Done, and each time it adds one, it
@@ -153,8 +155,9 @@ func (m *Module) GetDependenciesRecursively() ([]*Module, error) {
 
 	var wg sync.WaitGroup
 	var groupError error
-	go func(){
+	go func(ctx context.Context){
 		for mod := range modules {
+			ctx, _ = context.WithTimeout(ctx, 30*time.Second)
 			if _, seen := seenMap[mod.String()]; seen {
 				// We have seen this before...
 				wg.Done()
@@ -165,7 +168,7 @@ func (m *Module) GetDependenciesRecursively() ([]*Module, error) {
 				wg.Done()
 				continue
 			}
-			err := mod.Download()
+			err := mod.Download(ctx)
 			if err != nil {
 				groupError = err
 				wg.Done()
@@ -186,7 +189,7 @@ func (m *Module) GetDependenciesRecursively() ([]*Module, error) {
 			seenMap[mod.String()] = struct{}{}
 			wg.Done()
 		}
-	}()
+	}(ctx)
 
 	// Send initial module.
 	wg.Add(1)

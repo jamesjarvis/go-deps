@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -42,14 +43,15 @@ func main() {
 
 			fmt.Printf("So, you want to add %q?\n", m.String())
 
-			err := m.Download()
+			ctx := context.TODO()
+			err := m.Download(ctx)
 			if err != nil {
 				return err
 			}
 
 			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
 
-			_, err = m.GetDependenciesRecursively()
+			_, err = m.GetDependenciesRecursively(ctx)
 			if err != nil {
 				return err
 			}
