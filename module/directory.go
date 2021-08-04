@@ -28,7 +28,7 @@ func NewDirectory() *Directory {
 
 func (d *Directory) Print() {
 	for path, vd := range d.modules {
-		fmt.Printf("PATH: %s\n", path)
+		fmt.Printf("MODULE: %s\n", path)
 		for version, mod := range vd.versions {
 			fmt.Printf("\tVERSION: %s\n", version)
 			fmt.Printf("\t\t%s\n", mod.String())
