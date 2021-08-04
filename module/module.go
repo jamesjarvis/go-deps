@@ -90,7 +90,18 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 		return nil, fmt.Errorf("failed to parse go.mod file: %w", err)
 	}
 
-	fmt.Println(goMod.Require)
+	modules := []*Module{}
+	for _, mod := range goMod.Require {
+		if mod.Indirect {
+			// We don't care about indirect modules tbh.
+			continue
+		}
 
-	return nil, nil
+		modules = append(modules, &Module{
+			Path: mod.Mod.Path,
+			Version: mod.Mod.Version,
+		})
+	}
+
+	return modules, nil
 }
