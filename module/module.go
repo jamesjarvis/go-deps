@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/modfile"
@@ -17,6 +18,8 @@ import (
 type Module struct {
 	Path string
 	Version string
+
+	Deps []*Module
 
 	downloaded bool
 	info string
@@ -107,5 +110,72 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 		})
 	}
 
+	m.Deps = modules
+
 	return modules, nil
+}
+
+func (m *Module) GetDependenciesRecursively() ([]*Module, error) {
+	// We start a goroutine to pass the modules we want to fetch to.
+	// This goroutine is then self populated by the dependencies it then fetches.
+	// Each time it fetches one, it calls wg.Done, and each time it adds one, it
+	// calls wg.Add.
+	// Once the waitgroup is done, the channel is closed, killing the worker.
+	// This implementation technically has a deadlock case, as if there are modules
+	// with thousands of dependencies, it will get stuck waiting to send on the 
+	// channel it is consuming from.
+	allModules := []*Module{}
+	modules := make(chan *Module, 1000)
+
+	seenMap := map[string]struct{}{}
+
+	var wg sync.WaitGroup
+	var groupError error
+	go func(){
+		for mod := range modules {
+			if _, seen := seenMap[mod.String()]; seen {
+				// We have seen this before...
+				wg.Done()
+				continue
+			}
+			if groupError != nil {
+				// If we encounter an error from any one of the dependency fetchers, we short circuit.
+				wg.Done()
+				continue
+			}
+			err := mod.Download()
+			if err != nil {
+				groupError = err
+				wg.Done()
+				continue
+			}
+			fetchedModules, err := mod.GetDependencies()
+			if err != nil {
+				groupError = err
+				wg.Done()
+				continue
+			}
+			for _, fetchedMod := range fetchedModules {
+				wg.Add(1)
+				modules <- fetchedMod
+			}
+			allModules = append(allModules, fetchedModules...)
+			// Mark this module as seen.
+			seenMap[mod.String()] = struct{}{}
+			wg.Done()
+		}
+	}()
+
+	// Send initial module.
+	wg.Add(1)
+	modules <- m
+
+	// Wait for results and close sending channel.
+	wg.Wait()
+	close(modules)
+	
+	if groupError != nil {
+		return nil, groupError
+	}
+	return allModules, nil
 }

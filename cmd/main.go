@@ -49,7 +49,7 @@ func main() {
 
 			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
 
-			deps, err := m.GetDependencies()
+			deps, err := m.GetDependenciesRecursively()
 			if err != nil {
 				return err
 			}
