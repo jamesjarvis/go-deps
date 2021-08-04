@@ -54,6 +54,7 @@ func main() {
 				return err
 			}
 
+			module.GlobalCache.Sync()
 			module.GlobalCache.Print()
 
 			return nil

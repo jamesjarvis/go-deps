@@ -2,6 +2,7 @@ package module
 
 import (
 	"fmt"
+	"log"
 
 	"golang.org/x/mod/semver"
 )
@@ -23,6 +24,21 @@ type Directory struct {
 func NewDirectory() *Directory {
 	return &Directory{
 		modules: map[string]*VersionDirectory{},
+	}
+}
+
+// Sync is a lazy implementation to refresh all of the module dependencies to the closest semver.
+func (d *Directory) Sync() {
+	for _, vd := range d.modules {
+		for _, mod := range vd.versions {
+			for i, dep := range mod.Deps {
+				closestMod := d.GetClosestModule(dep.Path, dep.Version)
+				if dep != closestMod {
+					log.Printf("Synced %s --> %s\n", dep.String(), closestMod.String())
+				}
+				mod.Deps[i] = closestMod
+			}
+		}
 	}
 }
 
@@ -62,6 +78,19 @@ func (d *Directory) GetModule(path, version string) *Module {
 	return mod
 }
 
+func (d *Directory) GetClosestModule(path, version string) *Module {
+	vd := d.Get(path)
+	if vd == nil {
+		return nil
+	}
+	closestVersion := vd.GetClosestVersion(version)
+	mod := vd.GetVersion(closestVersion)
+	if mod == nil {
+		return nil
+	}
+	return mod
+}
+
 func (d *Directory) SetModule(mod *Module) *Module {
 	vd := d.Get(mod.Path)
 	if vd == nil {
@@ -93,6 +122,23 @@ func (vd *VersionDirectory) GetVersion(version string) *Module {
 		return nil
 	}
 	return mod
+}
+
+// GetClosestVersion returns the highest semver within the same major version,
+// or itself if no matches found.
+func (vd *VersionDirectory) GetClosestVersion(version string) string {
+	major := semver.Major(version)
+	for existingVers, _ := range vd.versions {
+		existingMajor := semver.Major(existingVers)
+		if major == existingMajor {
+			comparison := semver.Compare(version, existingVers)
+			// If incoming is less than existing, return existing.
+			if comparison < 0 {
+				return existingVers
+			}
+		}
+	}
+	return version
 }
 
 func (vd *VersionDirectory) SetVersion(version string, mod *Module) *Module {
