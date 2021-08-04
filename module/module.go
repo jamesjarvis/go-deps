@@ -1,6 +1,8 @@
 package module
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -36,6 +38,7 @@ func (m *Module) Download() error {
 
 	cmd := exec.Command(goTool, "get", m.String())
 	cmd.Env = env
+	cmd.Dir = dir
 	if _, err := cmd.Output(); err != nil {
 		return err
 	}
@@ -107,5 +110,53 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 		return nil, fmt.Errorf("module %s has not been downloaded yet", m.String())
 	}
 
-	return nil, nil
+	modulePath, err := m.FindPath()
+	if err != nil {
+		return nil, fmt.Errorf("error while finding module path for %s", m.String())
+	}
+
+	if err = os.Chdir(modulePath); err != nil {
+		return nil, fmt.Errorf("failed to change directory to %s", modulePath)
+	}
+
+	goTool := host.FindGoTool()
+	env := append(os.Environ(), "GO111MODULE=on")
+
+	cmd := exec.Command(goTool, "list", "-mod=readonly", "-m", "-json", "all")
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	cmd.Env = env
+	cmd.Dir = modulePath
+	out, err := cmd.Output()
+	if err != nil {
+		fmt.Println(stderr)
+		return nil, err
+	}
+
+	type module struct {
+		Path, Version, Sum string
+		Main             bool
+		Indirect bool
+		Replace            *struct {
+			Path, Version string
+		}
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(out))
+	modules := []*Module{}
+	for dec.More() {
+		mod := new(module)
+		if err := dec.Decode(mod); err != nil {
+			return nil, err
+		}
+		if mod.Main || mod.Indirect {
+			continue
+		}
+		modules = append(modules, &Module{
+			Path: mod.Path,
+			Version: mod.Version,
+		})
+	}
+
+	return modules, nil
 }

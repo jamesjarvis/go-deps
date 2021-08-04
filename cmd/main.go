@@ -49,6 +49,12 @@ func main() {
 
 			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
 
+			deps, err := m.GetDependencies()
+			if err != nil {
+				return err
+			}
+			fmt.Println(deps)
+
 			return nil
 		},
 	}
