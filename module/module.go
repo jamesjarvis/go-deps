@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/fs"
+	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
-	"path/filepath"
-	"strings"
 
 	"github.com/jamesjarvis/go-deps/host"
+	"golang.org/x/mod/modfile"
 )
 
 // Module is the module object we want to add to the project, essentially just the module path
@@ -21,6 +19,11 @@ type Module struct {
 	Version string
 
 	downloaded bool
+	info string
+	goMod string
+	dir string
+	sum string
+	goModSum string
 }
 
 func (m *Module) String() string {
@@ -34,75 +37,39 @@ func (m *Module) String() string {
 func (m *Module) Download() error {
 	goTool := host.FindGoTool()
 	dir := host.MustGetCacheDir()
-	env := append(os.Environ(), "GO111MODULE=on", fmt.Sprintf("GOPATH=%s", dir))
+	env := append(os.Environ(), fmt.Sprintf("GOPATH=%s", dir))
 
-	cmd := exec.Command(goTool, "get", m.String())
+	cmd := exec.Command(goTool, "mod", "download", "-json", m.String())
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
 	cmd.Env = env
 	cmd.Dir = dir
-	if _, err := cmd.Output(); err != nil {
-		return err
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to download module: %s: %w", stderr.String(), err)
+	}
+
+	type module struct {
+		Path, Version, Info, GoMod, Zip, Dir, Sum, GoModSum string
+	}
+
+	mod := new(module)
+	err = json.Unmarshal(out, mod)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal output: %w", err)
 	}
 
 	m.downloaded = true
 	if m.Version == "" {
-		// Find downloaded path
-		moduleCachePath, err := m.FindPath()
-		if err != nil {
-			return err
-		}
-		m.Version = strings.Split(moduleCachePath, "@")[1]
+		m.Version = mod.Version
 	}
+	m.info = mod.Info
+	m.goMod = mod.GoMod
+	m.goModSum = mod.GoModSum
+	m.sum = mod.Sum
+	m.dir = mod.Dir
 
 	return nil
-}
-
-// FindPath looks for the directory containing the code for the downloaded module.
-func (m *Module) FindPath() (string, error) {
-	cacheDir := host.MustGetCacheDir()
-	pathSlice := []string{cacheDir, "pkg", "mod"}
-	modulePathSlice := strings.Split(m.Path, "/")
-	pathSlice = append(pathSlice, modulePathSlice[:len(modulePathSlice)-1]...)
-	moduleCachePath := path.Join(pathSlice...)
-
-	baseName := modulePathSlice[len(modulePathSlice)-1]
-
-	var finalPiece string
-	var exactMatch bool
-
-	err := filepath.Walk(moduleCachePath, func(path string, info fs.FileInfo, err error) error {
-		if exactMatch {
-			// This short circuits if we have already found the final piece.
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if err != nil {
-			fmt.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
-			return err
-		}
-		if !info.IsDir() {
-			return nil
-		}
-
-		if info.Name() == fmt.Sprintf("%s@%s", baseName, m.Version) {
-			finalPiece = info.Name()
-			exactMatch = true
-			return filepath.SkipDir
-		}
-
-		if strings.HasPrefix(info.Name(), baseName) {
-			finalPiece = info.Name()
-			return filepath.SkipDir
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	moduleCachePath = path.Join(moduleCachePath, finalPiece)
-
-	return moduleCachePath, nil
 }
 
 func (m *Module) GetDependencies() ([]*Module, error) {
@@ -110,53 +77,19 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 		return nil, fmt.Errorf("module %s has not been downloaded yet", m.String())
 	}
 
-	modulePath, err := m.FindPath()
+	modulePath := m.goMod
+
+	goModBytes, err := ioutil.ReadFile(modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("error while finding module path for %s", m.String())
+		return nil, fmt.Errorf("failed to read go.mod file: %w", err)
 	}
 
-	if err = os.Chdir(modulePath); err != nil {
-		return nil, fmt.Errorf("failed to change directory to %s", modulePath)
-	}
-
-	goTool := host.FindGoTool()
-	env := append(os.Environ(), "GO111MODULE=on")
-
-	cmd := exec.Command(goTool, "list", "-mod=readonly", "-m", "-json", "all")
-	stderr := &bytes.Buffer{}
-	cmd.Stderr = stderr
-	cmd.Env = env
-	cmd.Dir = modulePath
-	out, err := cmd.Output()
+	goMod, err := modfile.ParseLax(modulePath, goModBytes, nil)
 	if err != nil {
-		fmt.Println(stderr)
-		return nil, err
+		return nil, fmt.Errorf("failed to parse go.mod file: %w", err)
 	}
 
-	type module struct {
-		Path, Version, Sum string
-		Main             bool
-		Indirect bool
-		Replace            *struct {
-			Path, Version string
-		}
-	}
+	fmt.Println(goMod.Require)
 
-	dec := json.NewDecoder(bytes.NewReader(out))
-	modules := []*Module{}
-	for dec.More() {
-		mod := new(module)
-		if err := dec.Decode(mod); err != nil {
-			return nil, err
-		}
-		if mod.Main || mod.Indirect {
-			continue
-		}
-		modules = append(modules, &Module{
-			Path: mod.Path,
-			Version: mod.Version,
-		})
-	}
-
-	return modules, nil
+	return nil, nil
 }
