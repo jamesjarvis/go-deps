@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/jamesjarvis/go-deps/host"
@@ -50,7 +51,7 @@ func (m *Module) Download() error {
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {
-		return fmt.Errorf("failed to download module: %s: %w", stderr.String(), err)
+		return fmt.Errorf("command failed: %s: %w", stderr.String(), err)
 	}
 
 	type module struct {
@@ -64,6 +65,19 @@ func (m *Module) Download() error {
 		return fmt.Errorf("failed to unmarshal output: %w", err)
 	}
 	if mod.Error != "" {
+		// This is a little bit hacky, but if it's failed because we didn't run go get,
+		// we just do that here and retry.
+		// Download downloads the go module into a temporary directory
+		if strings.Contains(mod.Error, "not a known dependency") {
+			cmd := exec.Command(goTool, "get", m.String())
+			cmd.Env = env
+			cmd.Dir = dir
+			if _, err := cmd.Output(); err != nil {
+				return fmt.Errorf("failed to run go get: %w", err)
+			}
+			return m.Download()
+		}
+	
 		return fmt.Errorf("failed to download module: %s", mod.Error)
 	}
 
