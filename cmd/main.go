@@ -49,11 +49,12 @@ func main() {
 
 			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
 
-			deps, err := m.GetDependenciesRecursively()
+			_, err = m.GetDependenciesRecursively()
 			if err != nil {
 				return err
 			}
-			fmt.Println(deps)
+
+			module.GlobalCache.Print()
 
 			return nil
 		},

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"sync"
@@ -75,6 +76,13 @@ func (m *Module) Download() error {
 	m.goModSum = mod.GoModSum
 	m.sum = mod.Sum
 	m.dir = mod.Dir
+
+	// Add self to cache
+	storedModule := GlobalCache.SetModule(m)
+	if storedModule != m {
+		log.Printf("Dependencies change! We started with %s and now have %s", m, storedModule)
+		m = storedModule
+	}
 
 	return nil
 }

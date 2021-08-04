@@ -1,11 +1,39 @@
 package module
 
-import "golang.org/x/mod/semver"
+import (
+	"fmt"
+
+	"golang.org/x/mod/semver"
+)
+
+var GlobalCache *Directory
+
+func init() {
+	// I know this is kinda dirty code but I couldn't be bothered to
+	// think about this too hard for the initial implementation....
+	GlobalCache = NewDirectory()
+}
 
 // Directory will be the global cache of seen modules, it will be responsible
 // for storing modules and ultimately resolving module version clashes.
 type Directory struct {
 	modules map[string]*VersionDirectory
+}
+
+func NewDirectory() *Directory {
+	return &Directory{
+		modules: map[string]*VersionDirectory{},
+	}
+}
+
+func (d *Directory) Print() {
+	for path, vd := range d.modules {
+		fmt.Printf("PATH: %s\n", path)
+		for version, mod := range vd.versions {
+			fmt.Printf("\tVERSION: %s\n", version)
+			fmt.Printf("\t\t%s\n", mod.String())
+		}
+	}
 }
 
 func (d *Directory) Get(path string) *VersionDirectory {
@@ -31,7 +59,7 @@ func (d *Directory) GetModule(path, version string) *Module {
 func (d *Directory) SetModule(mod *Module) *Module {
 	vd := d.Get(mod.Path)
 	if vd == nil {
-		vd = new(VersionDirectory)
+		vd = NewVersionDirectory()
 	}
 
 	fixedMod := vd.SetVersion(mod.Version, mod)
@@ -45,6 +73,12 @@ func (d *Directory) Set(path string, vd *VersionDirectory) {
 
 type VersionDirectory struct {
 	versions map[string]*Module
+}
+
+func NewVersionDirectory() *VersionDirectory {
+	return &VersionDirectory{
+		versions: map[string]*Module{},
+	}
 }
 
 func (vd *VersionDirectory) GetVersion(version string) *Module {
