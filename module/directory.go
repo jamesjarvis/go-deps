@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -45,9 +46,23 @@ func (d *Directory) Sync() {
 }
 
 func (d *Directory) Print() {
-	for path, vd := range d.modules {
+	// Sort the paths to deterministically print output.
+	paths := make([]string, 0, len(d.modules))
+	for path := range d.modules {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		vd := d.modules[path]
 		fmt.Printf("MODULE: %s\n", path)
-		for version, mod := range vd.versions {
+		// Sort the versions to deterministically print output.
+		versions := make([]string, 0, len(vd.versions))
+		for version := range vd.versions {
+			versions = append(versions, version)
+		}
+		sort.Strings(versions)
+		for _, version := range versions {
+			mod := vd.versions[version]
 			fmt.Printf("\tVERSION: %s\n", version)
 			fmt.Printf("\t\t%s\n", mod.String())
 			if len(mod.Deps) > 0 {
@@ -61,8 +76,22 @@ func (d *Directory) Print() {
 }
 
 func (d *Directory) ExportBuildRules() error {
-	for _, vd := range d.modules {
-		for _, mod := range vd.versions {
+	// Sort the paths to deterministically write build files.
+	paths := make([]string, 0, len(d.modules))
+	for path := range d.modules {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		vd := d.modules[path]
+		// Sort the versions to deterministically write build files.
+		versions := make([]string, 0, len(vd.versions))
+		for version := range vd.versions {
+			versions = append(versions, version)
+		}
+		sort.Strings(versions)
+		for _, version := range versions {
+			mod := vd.versions[version]
 			buildFilePath := mod.GetBuildPath()
 			if _, err := os.Stat(buildFilePath); os.IsNotExist(err) { 
 				err = os.MkdirAll(strings.TrimSuffix(buildFilePath, "/BUILD"), 0700) // Create the nested directory
