@@ -30,6 +30,14 @@ func FindGoTool() string {
 	return path
 }
 
+func RemoveAllThirdPartyFiles() error {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("unable to determine working directory: %w", err)
+	}
+	return os.RemoveAll(path.Join(currentDir, "third_party", "go"))
+}
+
 func CreateGoMod(ctx context.Context) (alreadyExists bool, err error) {
 	currentDir, err := os.Getwd()
 	if err != nil {

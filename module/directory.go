@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/semver"
 )
 
@@ -76,6 +77,11 @@ func (d *Directory) Print() {
 }
 
 func (d *Directory) ExportBuildRules() error {
+	// Delete all existing third party build files.
+	err := host.RemoveAllThirdPartyFiles()
+	if err != nil {
+		return err
+	}
 	// Sort the paths to deterministically write build files.
 	paths := make([]string, 0, len(d.modules))
 	for path := range d.modules {
