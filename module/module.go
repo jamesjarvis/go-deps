@@ -51,6 +51,7 @@ type Module struct {
 	goModSum string
 }
 
+// String returns a string representation of the module, with the module name and version.
 func (m *Module) String() string {
 	if m.Version == "" {
 		return m.Path
@@ -58,6 +59,8 @@ func (m *Module) String() string {
 	return fmt.Sprintf("%s@%s", m.Path, m.Version)
 }
 
+// GetName returns a please friendly name for the module, with info of the version if
+// multiple versions of the same module exist.
 func (m *Module) GetName() string {
 	if m.Name != "" {
 		return m.Name
@@ -70,6 +73,7 @@ func (m *Module) GetName() string {
 	return modName
 }
 
+// GetBuildPath returns the path to the please BUILD file where this module is defined.
 func (m *Module) GetBuildPath() string {
 	splitPath := strings.Split(m.Path, "/")
 	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
@@ -80,6 +84,7 @@ func (m *Module) GetBuildPath() string {
 	return fmt.Sprintf("%s/third_party/go/%s/BUILD", currentDir, pathMinusEnd)
 }
 
+// GetFullyQualifiedName returns the please build target for this module.
 func (m *Module) GetFullyQualifiedName() string {
 	splitPath := strings.Split(m.Path, "/")
 	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
@@ -87,6 +92,8 @@ func (m *Module) GetFullyQualifiedName() string {
 	return "//" + buildDir + ":" + m.GetName()
 }
 
+// WriteGoModuleRule accepts an io.Writer interface and write the go_module build definition
+// for this module to it.
 func (m *Module) WriteGoModuleRule(wr io.Writer) error {
 	return goModuleTemplater.Execute(wr, m)
 }
@@ -159,6 +166,9 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 	return modules, nil
 }
 
+// GetDependenciesRecursively downloads and stores the dependencies of the specified module, and all of
+// it's dependencies. You should only need to call this once at the root module, but if you call it
+// multiple times that should be a no-op.
 func (m *Module) GetDependenciesRecursively(ctx context.Context) ([]*Module, error) {
 	// We start a goroutine to pass the modules we want to fetch to.
 	// This goroutine is then self populated by the dependencies it then fetches.
