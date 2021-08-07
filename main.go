@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/jamesjarvis/go-deps/host"
 	"github.com/jamesjarvis/go-deps/module"
 	"github.com/urfave/cli/v2"
 )
@@ -34,7 +35,16 @@ func main() {
 			},
 		},
 		Action: func(c *cli.Context) error {
+			ctx := context.TODO()
 			fmt.Println("Please Go Get v0.0.1")
+
+			alreadyExists, err := host.CreateGoMod(ctx)
+			if err != nil {
+				return err
+			}
+			if !alreadyExists {
+				defer host.TearDownGoMod(ctx)
+			}
 
 			m := &module.Module{
 				Path: c.String(moduleFlag),
@@ -43,8 +53,7 @@ func main() {
 
 			fmt.Printf("So, you want to add %q?\n", m.String())
 
-			ctx := context.TODO()
-			err := m.Download(ctx)
+			err = m.Download(ctx)
 			if err != nil {
 				return err
 			}
