@@ -15,3 +15,5 @@ Example Tests:
 - ✅ `go run ../main.go -m github.com/stretchr/testify -v v1.6.1`
 - ❌ `go run ../main.go -m github.com/grpc-ecosystem/grpc-gateway -v v1.16.0`
   - This is because some dependencies do not actually contain go.mod files at the requested version, so their builds fail.
+- ❌ `go run ../main.go -m github.com/jamesjarvis/go-deps`
+  - Ironically this fails due to old tags of dependencies not containing go.mod or failing to include all required modules.
