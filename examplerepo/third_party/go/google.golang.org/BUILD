@@ -32,7 +32,7 @@ go_module(
   module = "google.golang.org/grpc",
   version = "v1.33.1",
   deps = [
-    "//third_party/go/github.com/cncf/udpa:go",
+    "//third_party/go/github.com/cncf:udpa_go",
     "//third_party/go/github.com/envoyproxy:go-control-plane",
     "//third_party/go/github.com/golang:glog",
     "//third_party/go/github.com/golang:protobuf",

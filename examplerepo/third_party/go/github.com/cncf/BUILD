@@ -1,6 +1,6 @@
 
 go_module(
-  name = "go",
+  name = "udpa_go",
   module = "github.com/cncf/udpa/go",
   version = "v0.0.0-20191209042840-269d4d468f6f",
   deps = [

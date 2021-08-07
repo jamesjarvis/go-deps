@@ -5,7 +5,7 @@ go_module(
   version = "v0.9.4",
   deps = [
     "//third_party/go/github.com/census-instrumentation:opencensus-proto",
-    "//third_party/go/github.com/cncf/udpa:go",
+    "//third_party/go/github.com/cncf:udpa_go",
     "//third_party/go/github.com/envoyproxy:protoc-gen-validate",
     "//third_party/go/github.com/golang:protobuf",
     "//third_party/go/github.com/google:go-cmp",
