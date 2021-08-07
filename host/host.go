@@ -31,6 +31,12 @@ func GetCacheDir() (string, error) {
 		return "", fmt.Errorf("unable to determine working directory: %w", err)
 	}
 	dir := path.Join(currentDir, "tmp")
+	if _, err := os.Stat(dir); os.IsNotExist(err) { 
+		err = os.MkdirAll(dir, 0700) // Create the cache directory
+		if err != nil {
+			return "", fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
 	return dir, nil
 }
 

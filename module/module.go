@@ -106,7 +106,7 @@ func (m *Module) Download(ctx context.Context) error {
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {
-		return fmt.Errorf("command failed: %s: %w", stderr.String(), err)
+		return fmt.Errorf("download command failed: %s: %w", stderr.String(), err)
 	}
 
 	type module struct {
