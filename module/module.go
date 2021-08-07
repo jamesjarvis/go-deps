@@ -19,16 +19,18 @@ import (
 
 const goModuleTemplateString = `
 go_module(
-	name = "{{ .GetName }}",
-	module = "{{ .Path }}",
-	version = "{{ .Version }}",
-	deps = [
-		{{- range .Deps }}
-		"{{ .GetFullyQualifiedName }}",
-		{{- end }}
-	],
+  name = "{{ .GetName }}",
+  module = "{{ .Path }}",
+  version = "{{ .Version }}",
+  deps = [
+    {{- range .Deps }}
+    "{{ .GetFullyQualifiedName }}",
+    {{- end }}
+  ],
+  visibility = ["PUBLIC"],
+  install = ["..."],
 )
-	`
+`
 
 var goModuleTemplater = template.Must(template.New("go_module").Parse(goModuleTemplateString))
 
@@ -124,6 +126,9 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 	}
 
 	modulePath := m.goMod
+	if modulePath == "" {
+		return nil, fmt.Errorf("go.mod path not set: %s", modulePath)
+	}
 
 	goModBytes, err := ioutil.ReadFile(modulePath)
 	if err != nil {
