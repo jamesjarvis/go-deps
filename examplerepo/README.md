@@ -17,3 +17,5 @@ Example Tests:
   - This is because some dependencies do not actually contain go.mod files at the requested version, so their builds fail.
 - ❌ `go run ../main.go -m github.com/jamesjarvis/go-deps`
   - Ironically this fails due to old tags of dependencies not containing go.mod or failing to include all required modules.
+- 🤷‍♂️ `go run ../main.go -m google.golang.org/appengine`
+  - This works once you add `strip=["cmd","playground"]` to `golang.org/x/tools`...
