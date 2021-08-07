@@ -71,7 +71,7 @@ func (m *Module) GetName() string {
 		modName = strings.Join(splitPath[2:], "_")
 	}
 	if m.nameWithVersion {
-		return modName + semver.Major(m.Version)
+		return modName + "_" + semver.Major(m.Version)
 	}
 	return modName
 }

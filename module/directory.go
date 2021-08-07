@@ -35,6 +35,8 @@ func NewDirectory() *Directory {
 func (d *Directory) Sync() {
 	for _, vd := range d.modules {
 		for _, mod := range vd.versions {
+			// Flag this module as requiring to specify the version as we have multiple versions.
+			mod.nameWithVersion = len(vd.versions) > 1
 			for i, dep := range mod.Deps {
 				closestMod := d.GetClosestModule(dep.Path, dep.Version)
 				if dep != closestMod {
