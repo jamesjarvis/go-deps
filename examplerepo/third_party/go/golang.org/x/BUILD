@@ -2,8 +2,9 @@
 go_module(
   name = "crypto",
   module = "golang.org/x/crypto",
-  version = "v0.0.0-20190308221718-c2843e01d9a2",
+  version = "v0.0.0-20200622213623-75b288015ac9",
   deps = [
+    "//third_party/go/golang.org/x:net",
     "//third_party/go/golang.org/x:sys",
   ],
   visibility = ["PUBLIC"],
@@ -34,9 +35,10 @@ go_module(
 go_module(
   name = "net",
   module = "golang.org/x/net",
-  version = "v0.0.0-20190311183353-d8887717615a",
+  version = "v0.0.0-20200822124328-c89045814202",
   deps = [
     "//third_party/go/golang.org/x:crypto",
+    "//third_party/go/golang.org/x:sys",
     "//third_party/go/golang.org/x:text",
   ],
   visibility = ["PUBLIC"],
@@ -69,7 +71,7 @@ go_module(
 go_module(
   name = "sys",
   module = "golang.org/x/sys",
-  version = "v0.0.0-20190215142949-d0b11bdaac8a",
+  version = "v0.0.0-20200323222414-85ca7c5b95cd",
   deps = [
   ],
   visibility = ["PUBLIC"],

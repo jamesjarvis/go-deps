@@ -2,7 +2,7 @@
 go_module(
   name = "go-cmp",
   module = "github.com/google/go-cmp",
-  version = "v0.4.0",
+  version = "v0.5.0",
   deps = [
     "//third_party/go/golang.org/x:xerrors",
   ],

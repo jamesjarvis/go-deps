@@ -3,7 +3,7 @@
 This repo contains the output of running:
 
 ```bash
-go run ../main.go -m github.com/grpc-ecosystem/grpc-gateway -v v1.16.0
+go run ../main.go -m github.com/jamesjarvis/WhatsUpKent -v v0.0.2
 ```
 
 This was arbitrarily chosen as it's a kinda hard module to download (as there are many dependencies of dependencies and some are outdated).
