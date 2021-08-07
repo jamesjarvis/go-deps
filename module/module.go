@@ -5,27 +5,47 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 )
+
+const goModuleTemplateString = `
+go_module(
+	name = "{{ .GetName }}",
+	module = "{{ .Path }}",
+	version = "{{ .Version }}",
+	deps = [
+		{{- range .Deps }}
+		"{{ .GetFullyQualifiedName }}",
+		{{- end }}
+	],
+)
+	`
+
+var goModuleTemplater = template.Must(template.New("go_module").Parse(goModuleTemplateString))
 
 // Module is the module object we want to add to the project, essentially just the module path
 // and any required information for fetching the module (such as version).
 type Module struct {
 	Path string
 	Version string
+	Name string
 
 	Deps []*Module
 
 	downloaded bool
+	nameWithVersion bool
 	info string
 	goMod string
 	dir string
@@ -38,6 +58,39 @@ func (m *Module) String() string {
 		return m.Path
 	}
 	return fmt.Sprintf("%s@%s", m.Path, m.Version)
+}
+
+func (m *Module) GetName() string {
+	if m.Name != "" {
+		return m.Name
+	}
+	splitPath := strings.Split(m.Path, "/")
+	modName := splitPath[len(splitPath)-1]
+	if m.nameWithVersion {
+		return modName + semver.Major(m.Version)
+	}
+	return modName
+}
+
+func (m *Module) GetBuildPath() string {
+	splitPath := strings.Split(m.Path, "/")
+	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	currentDir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s/third_party/go/%s/BUILD", currentDir, pathMinusEnd)
+}
+
+func (m *Module) GetFullyQualifiedName() string {
+	splitPath := strings.Split(m.Path, "/")
+	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	buildDir := fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	return "//" + buildDir + ":" + m.GetName()
+}
+
+func (m *Module) WriteGoModuleRule(wr io.Writer) error {
+	return goModuleTemplater.Execute(wr, m)
 }
 
 // Download downloads the go module into a temporary directory

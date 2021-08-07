@@ -3,6 +3,8 @@ package module
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"golang.org/x/mod/semver"
 )
@@ -56,6 +58,31 @@ func (d *Directory) Print() {
 			}
 		}
 	}
+}
+
+func (d *Directory) ExportBuildRules() error {
+	for _, vd := range d.modules {
+		for _, mod := range vd.versions {
+			buildFilePath := mod.GetBuildPath()
+			if _, err := os.Stat(buildFilePath); os.IsNotExist(err) { 
+				err = os.MkdirAll(strings.TrimSuffix(buildFilePath, "/BUILD"), 0700) // Create the nested directory
+				if err != nil {
+					return fmt.Errorf("failed to create directory: %w", err)
+				}
+			}
+			f, err := os.OpenFile(buildFilePath,
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to open file: %w", err)
+			}
+			defer f.Close()
+			err = mod.WriteGoModuleRule(f)
+			if err != nil {
+				return fmt.Errorf("failed to append go_module to file: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (d *Directory) Get(path string) *VersionDirectory {

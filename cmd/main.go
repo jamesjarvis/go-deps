@@ -59,7 +59,7 @@ func main() {
 			module.GlobalCache.Sync()
 			module.GlobalCache.Print()
 
-			return nil
+			return module.GlobalCache.ExportBuildRules()
 		},
 	}
 
