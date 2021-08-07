@@ -31,7 +31,32 @@ go_module(
 )
 `
 
-var goModuleTemplater = template.Must(template.New("go_module").Parse(goModuleTemplateString))
+const goModuleDownloadTemplateString = `
+go_mod_download(
+  name = "{{ .GetDownloadName }}",
+  module = "{{ .Path }}",
+  version = "{{ .Version }}",
+  deps = [
+    {{- range .Deps }}
+    "{{ .GetFullyQualifiedName }}",
+    {{- end }}
+  ],
+  visibility = ["PUBLIC"],
+)
+
+go_module(
+  name = "{{ .GetName }}",
+  module = "{{ .Path }}",
+  download = "{{ .GetFullyQualifiedDownloadName }}",
+  visibility = ["PUBLIC"],
+  install = ["..."],
+)
+`
+
+var (
+	goModuleTemplater = template.Must(template.New("go_module").Parse(goModuleTemplateString))
+	goModuleDownloadTemplater = template.Must(template.New("go_mod_download").Parse(goModuleDownloadTemplateString))
+)
 
 // Module is the module object we want to add to the project, essentially just the module path
 // and any required information for fetching the module (such as version).
@@ -76,6 +101,11 @@ func (m *Module) GetName() string {
 	return modName
 }
 
+// GetDownloadName returns a please friendly name for the module's go_mod_download rule.
+func (m *Module) GetDownloadName() string {
+	return m.GetName() + "_" + "download"
+}
+
 // GetBuildPath returns the path to the please BUILD file where this module is defined.
 func (m *Module) GetBuildPath() string {
 	splitPath := strings.Split(m.Path, "/")
@@ -101,9 +131,23 @@ func (m *Module) GetFullyQualifiedName() string {
 	return "//" + buildDir + ":" + m.GetName()
 }
 
+// GetFullyQualifiedDownloadName returns the please build target for this module's go_mod_download rule.
+func (m *Module) GetFullyQualifiedDownloadName() string {
+	splitPath := strings.Split(m.Path, "/")
+	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	if splitPath[0] == "github.com" {
+		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	}
+	buildDir := fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	return "//" + buildDir + ":" + m.GetDownloadName()
+}
+
 // WriteGoModuleRule accepts an io.Writer interface and write the go_module build definition
 // for this module to it.
 func (m *Module) WriteGoModuleRule(wr io.Writer) error {
+	if m.nameWithVersion {
+		return goModuleDownloadTemplater.Execute(wr, m)
+	}
 	return goModuleTemplater.Execute(wr, m)
 }
 
