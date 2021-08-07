@@ -58,8 +58,6 @@ func main() {
 				return err
 			}
 
-			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
-
 			_, err = m.GetDependenciesRecursively(ctx)
 			if err != nil {
 				return err

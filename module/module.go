@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/modfile"
@@ -116,6 +115,8 @@ func (m *Module) Download(ctx context.Context) error {
 		m = storedModule
 	}
 
+	log.Printf("Downloaded: %q\n", m.String())
+
 	return nil
 }
 
@@ -176,7 +177,6 @@ func (m *Module) GetDependenciesRecursively(ctx context.Context) ([]*Module, err
 	var groupError error
 	go func(ctx context.Context){
 		for mod := range modules {
-			ctx, _ = context.WithTimeout(ctx, 30*time.Second)
 			if _, seen := seenMap[mod.String()]; seen {
 				// We have seen this before...
 				wg.Done()
