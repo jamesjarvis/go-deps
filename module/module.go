@@ -1,15 +1,12 @@
 package module
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"text/template"
@@ -95,56 +92,20 @@ func (m *Module) WriteGoModuleRule(wr io.Writer) error {
 
 // Download downloads the go module into a temporary directory
 func (m *Module) Download(ctx context.Context) error {
-	goTool := host.FindGoTool()
-	dir := host.MustGetCacheDir()
-	env := append(os.Environ(), fmt.Sprintf("GOPATH=%s", dir))
-
-	cmd := exec.CommandContext(ctx, goTool, "mod", "download", "-json", m.String())
-	stderr := &bytes.Buffer{}
-	cmd.Stderr = stderr
-	cmd.Env = env
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil && len(out) == 0 {
-		return fmt.Errorf("download command failed: %s: %w", stderr.String(), err)
-	}
-
-	type module struct {
-		Path, Version, Info, GoMod, Zip, Dir, Sum, GoModSum string
-		Error string
-	}
-
-	mod := new(module)
-	err = json.Unmarshal(out, mod)
+	downloadedModule, err := host.GoModDownload(ctx, m.String())
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal output: %w", err)
-	}
-	if mod.Error != "" {
-		// This is a little bit hacky, but if it's failed because we didn't run go get,
-		// we just do that here and retry.
-		// Download downloads the go module into a temporary directory
-		if strings.Contains(mod.Error, "not a known dependency") {
-			cmd := exec.CommandContext(ctx, goTool, "get", m.String())
-			cmd.Env = env
-			cmd.Dir = dir
-			if _, err := cmd.Output(); err != nil {
-				return fmt.Errorf("failed to run go get: %w", err)
-			}
-			return m.Download(ctx)
-		}
-	
-		return fmt.Errorf("failed to download module: %s", mod.Error)
+		return fmt.Errorf("failed to download go module: %w", err)
 	}
 
 	m.downloaded = true
 	if m.Version == "" {
-		m.Version = mod.Version
+		m.Version = downloadedModule.Version
 	}
-	m.info = mod.Info
-	m.goMod = mod.GoMod
-	m.goModSum = mod.GoModSum
-	m.sum = mod.Sum
-	m.dir = mod.Dir
+	m.info = downloadedModule.Info
+	m.goMod = downloadedModule.GoMod
+	m.goModSum = downloadedModule.GoModSum
+	m.sum = downloadedModule.Sum
+	m.dir = downloadedModule.Dir
 
 	// Add self to cache
 	storedModule := GlobalCache.SetModule(m)

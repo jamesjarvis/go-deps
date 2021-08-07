@@ -155,7 +155,7 @@ func (vd *VersionDirectory) GetVersion(version string) *Module {
 // or itself if no matches found.
 func (vd *VersionDirectory) GetClosestVersion(version string) string {
 	major := semver.Major(version)
-	for existingVers, _ := range vd.versions {
+	for existingVers := range vd.versions {
 		existingMajor := semver.Major(existingVers)
 		if major == existingMajor {
 			comparison := semver.Compare(version, existingVers)
