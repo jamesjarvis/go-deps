@@ -67,6 +67,9 @@ func (m *Module) GetName() string {
 	}
 	splitPath := strings.Split(m.Path, "/")
 	modName := splitPath[len(splitPath)-1]
+	if splitPath[0] == "github.com" {
+		modName = strings.Join(splitPath[2:], "_")
+	}
 	if m.nameWithVersion {
 		return modName + semver.Major(m.Version)
 	}
@@ -77,6 +80,9 @@ func (m *Module) GetName() string {
 func (m *Module) GetBuildPath() string {
 	splitPath := strings.Split(m.Path, "/")
 	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	if splitPath[0] == "github.com" {
+		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	}
 	currentDir, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -88,6 +94,9 @@ func (m *Module) GetBuildPath() string {
 func (m *Module) GetFullyQualifiedName() string {
 	splitPath := strings.Split(m.Path, "/")
 	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	if splitPath[0] == "github.com" {
+		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	}
 	buildDir := fmt.Sprintf("third_party/go/%s", pathMinusEnd)
 	return "//" + buildDir + ":" + m.GetName()
 }
