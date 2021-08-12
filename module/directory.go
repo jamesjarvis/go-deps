@@ -42,6 +42,15 @@ func (d *Directory) Sync() {
 	}
 }
 
+type Writer interface {
+	Write(modules map[string]*VersionDirectory)
+}
+
+func (d *Directory) Write(writer Writer) {
+	writer.Write(d.modules)
+}
+
+
 func (d *Directory) Print() {
 	for path, vd := range d.modules {
 		fmt.Printf("MODULE: %s\n", path)

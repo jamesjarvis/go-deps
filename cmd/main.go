@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -33,25 +32,24 @@ func main() {
 				Usage:   "Version of the module to add",
 			},
 		},
-		Action: func(c *cli.Context) error {
+		Action: func(ctx *cli.Context) error {
 			fmt.Println("Please Go Get v0.0.1")
 
 			m := &module.Module{
-				Path: c.String(moduleFlag),
-				Version: c.String(versionFlag),
+				Path: ctx.String(moduleFlag),
+				Version: ctx.String(versionFlag),
 			}
 
 			fmt.Printf("So, you want to add %q?\n", m.String())
 
-			ctx := context.TODO()
-			err := m.Download(ctx)
+			err := m.Download(ctx.Context)
 			if err != nil {
 				return err
 			}
 
 			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
 
-			_, err = m.GetDependenciesRecursively(ctx)
+			_, err = m.GetDependenciesRecursively(ctx.Context)
 			if err != nil {
 				return err
 			}
