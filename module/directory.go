@@ -175,7 +175,7 @@ func (d *Directory) SetModule(mod *Module) *Module {
 	if vd == nil {
 		vd = NewVersionDirectory()
 	}
-
+	fmt.Println(mod.String())
 	fixedMod := vd.SetVersion(mod.Version, mod)
 	d.Set(mod.Path, vd)
 	return fixedMod
@@ -216,6 +216,9 @@ func (vd *VersionDirectory) GetClosestVersion(version string) string {
 				return existingVers
 			}
 		}
+		if major == "v0" && existingMajor == "v1" {
+			return existingVers
+		}
 	}
 	return version
 }
@@ -234,7 +237,11 @@ func (vd *VersionDirectory) SetVersion(version string, mod *Module) *Module {
 	// then delete that version, and store this "better" version and return.
 	// If there is an existing version with different major, or none at all,
 	// then store this "different" version and return.
-	// 
+	// If there is an existing version with major 0 and the new version is major 1
+	// then delete the existing version and store this "better" version and return
+	// If there is an existing version with major 1 and the new version is major 0
+	// then return the existing version as it is "better"
+	//
 	// This should eventually lead to there only being one entry
 	// for each major version.
 	// A different implementation may choose to have stricter/more relaxed
@@ -251,6 +258,14 @@ func (vd *VersionDirectory) SetVersion(version string, mod *Module) *Module {
 				return mod
 			}
 			// If incoming is less than existing, return existing.
+			return existingMod
+		}
+		if major == "v1" && existingMajor == "v0" {
+			println(1)
+			delete(vd.versions, existingVers)
+			vd.versions[version] = mod
+		} else if major == "v0" && existingMajor == "v1" {
+			println(2)
 			return existingMod
 		}
 	}

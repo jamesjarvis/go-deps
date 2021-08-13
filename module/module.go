@@ -103,7 +103,7 @@ func (m *Module) GetName() string {
 		return modName + "_" + semver.Major(m.Version)
 	}
 	if m.nameWithHost {
-		return splitPath[0]+"_"+modName
+		return strings.ReplaceAll(m.Path, "/", "-")
 	}
 	return modName
 }
