@@ -207,7 +207,7 @@ go_module(
   version = "v0.0.0-20201120205902-5459f2c99403",
   deps = [
     "//third_party/go:protoc-gen-validate",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:grpc",
   ],
   visibility = ["PUBLIC"],
@@ -273,13 +273,13 @@ go_module(
     "//third_party/go:opencensus-proto",
     "//third_party/go:udpa_go",
     "//third_party/go:protoc-gen-validate",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:go-cmp",
     "//third_party/go:client_model",
     "//third_party/go:testify",
     "//third_party/go:genproto",
     "//third_party/go:grpc",
-    "//third_party/go:protobuf",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -345,13 +345,13 @@ go_module(
     "//third_party/go:handy",
     "//third_party/go:go.etcd.io-etcd-client-pkg-v3",
     "//third_party/go:v2",
-    "//third_party/go:v3",
+    "//third_party/go:go.etcd.io-etcd-client-v3",
     "//third_party/go:go.opencensus.io",
     "//third_party/go:zap",
     "//third_party/go:sync",
     "//third_party/go:time",
     "//third_party/go:grpc",
-    "//third_party/go:protobuf",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -444,19 +444,19 @@ go_module(
   module = "github.com/golang/mock",
   version = "v1.4.4",
   deps = [
-    "//third_party/go:golang.org-x-tools",
+    "//third_party/go:tools",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
 )
 
 go_module(
-  name = "github.com-golang-protobuf",
+  name = "protobuf",
   module = "github.com/golang/protobuf",
   version = "v1.5.2",
   deps = [
     "//third_party/go:go-cmp",
-    "//third_party/go:protobuf",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -531,7 +531,7 @@ go_module(
     "//third_party/go:optional",
     "//third_party/go:yaml",
     "//third_party/go:glog",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:fastuuid",
     "//third_party/go:oauth2",
     "//third_party/go:genproto",
@@ -1043,7 +1043,7 @@ go_module(
   module = "github.com/onsi/gomega",
   version = "v1.4.3",
   deps = [
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:ginkgo",
     "//third_party/go:net",
     "//third_party/go:yaml.v2",
@@ -1069,13 +1069,13 @@ go_module(
   version = "v0.2.5",
   deps = [
     "//third_party/go:sarama",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:mux",
     "//third_party/go:ginkgo",
     "//third_party/go:gomega",
     "//third_party/go:amqp",
     "//third_party/go:grpc",
-    "//third_party/go:protobuf",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -1128,7 +1128,7 @@ go_module(
   deps = [
     "//third_party/go:perks",
     "//third_party/go:xxhash_v2",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:go",
     "//third_party/go:client_model",
     "//third_party/go:common",
@@ -1144,7 +1144,7 @@ go_module(
   module = "github.com/prometheus/client_model",
   version = "v0.2.0",
   deps = [
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -1156,7 +1156,7 @@ go_module(
   version = "v0.26.0",
   deps = [
     "//third_party/go:log",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:httprouter",
     "//third_party/go:golang_protobuf_extensions",
     "//third_party/go:go-conntrack",
@@ -1295,13 +1295,13 @@ go_module(
 )
 
 go_module(
-  name = "go.etcd.io-etcd-api-v3",
+  name = "v3",
   module = "go.etcd.io/etcd/api/v3",
   version = "v3.5.0",
   deps = [
     "//third_party/go:go-semver",
     "//third_party/go:github.com-gogo-protobuf",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:grpc-gateway",
     "//third_party/go:genproto",
     "//third_party/go:grpc",
@@ -1330,7 +1330,7 @@ go_module(
   deps = [
     "//third_party/go:go",
     "//third_party/go:reflect2",
-    "//third_party/go:go.etcd.io-etcd-api-v3",
+    "//third_party/go:v3",
     "//third_party/go:go.etcd.io-etcd-client-pkg-v3",
   ],
   visibility = ["PUBLIC"],
@@ -1338,14 +1338,14 @@ go_module(
 )
 
 go_module(
-  name = "v3",
+  name = "go.etcd.io-etcd-client-v3",
   module = "go.etcd.io/etcd/client/v3",
   version = "v3.5.0",
   deps = [
     "//third_party/go:go-humanize",
     "//third_party/go:go-grpc-prometheus",
     "//third_party/go:client_golang",
-    "//third_party/go:go.etcd.io-etcd-api-v3",
+    "//third_party/go:v3",
     "//third_party/go:go.etcd.io-etcd-client-pkg-v3",
     "//third_party/go:zap",
     "//third_party/go:grpc",
@@ -1361,7 +1361,7 @@ go_module(
   version = "v0.23.0",
   deps = [
     "//third_party/go:groupcache",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:go-cmp",
     "//third_party/go:testify",
     "//third_party/go:net",
@@ -1437,7 +1437,7 @@ go_module(
   module = "golang.org/x/lint",
   version = "v0.0.0-20210508222113-6edffad5e616",
   deps = [
-    "//third_party/go:golang.org-x-tools",
+    "//third_party/go:tools",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -1449,7 +1449,7 @@ go_module(
   version = "v0.4.2",
   deps = [
     "//third_party/go:crypto",
-    "//third_party/go:golang.org-x-tools",
+    "//third_party/go:tools",
     "//third_party/go:xerrors",
   ],
   visibility = ["PUBLIC"],
@@ -1518,7 +1518,7 @@ go_module(
   module = "golang.org/x/text",
   version = "v0.3.3",
   deps = [
-    "//third_party/go:golang.org-x-tools",
+    "//third_party/go:tools",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -1535,7 +1535,7 @@ go_module(
 )
 
 go_module(
-  name = "golang.org-x-tools",
+  name = "tools",
   module = "golang.org/x/tools",
   version = "v0.1.2",
   deps = [
@@ -1565,7 +1565,7 @@ go_module(
   module = "google.golang.org/appengine",
   version = "v1.4.0",
   deps = [
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:net",
     "//third_party/go:text",
   ],
@@ -1578,11 +1578,11 @@ go_module(
   module = "google.golang.org/genproto",
   version = "v0.0.0-20210602131652-f16073e35f0c",
   deps = [
-    "//third_party/go:github.com-golang-protobuf",
-    "//third_party/go:lint",
-    "//third_party/go:golang.org-x-tools",
-    "//third_party/go:grpc",
     "//third_party/go:protobuf",
+    "//third_party/go:lint",
+    "//third_party/go:tools",
+    "//third_party/go:grpc",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
@@ -1596,25 +1596,25 @@ go_module(
     "//third_party/go:udpa_go",
     "//third_party/go:go-control-plane",
     "//third_party/go:glog",
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:go-cmp",
     "//third_party/go:uuid",
     "//third_party/go:net",
     "//third_party/go:oauth2",
     "//third_party/go:sys",
     "//third_party/go:genproto",
-    "//third_party/go:protobuf",
+    "//third_party/go:google.golang.org-protobuf",
   ],
   visibility = ["PUBLIC"],
   install = ["..."],
 )
 
 go_module(
-  name = "protobuf",
+  name = "google.golang.org-protobuf",
   module = "google.golang.org/protobuf",
   version = "v1.27.1",
   deps = [
-    "//third_party/go:github.com-golang-protobuf",
+    "//third_party/go:protobuf",
     "//third_party/go:go-cmp",
   ],
   visibility = ["PUBLIC"],
@@ -1664,7 +1664,7 @@ go_module(
 )
 
 go_module(
-  name = "tools",
+  name = "honnef.co-go-tools",
   module = "honnef.co/go/tools",
   version = "v0.0.0-20190523083050-ea95bdfd59fc",
   deps = [
