@@ -76,6 +76,7 @@ type Module struct {
 	dir string
 	sum string
 	goModSum string
+	nameWithHost bool
 }
 
 // String returns a string representation of the module, with the module name and version.
@@ -92,6 +93,7 @@ func (m *Module) GetName() string {
 	if m.Name != "" {
 		return m.Name
 	}
+
 	splitPath := strings.Split(m.Path, "/")
 	modName := splitPath[len(splitPath)-1]
 	if splitPath[0] == "github.com" {
@@ -99,6 +101,9 @@ func (m *Module) GetName() string {
 	}
 	if m.nameWithVersion {
 		return modName + "_" + semver.Major(m.Version)
+	}
+	if m.nameWithHost {
+		return splitPath[0]+"_"+modName
 	}
 	return modName
 }

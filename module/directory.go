@@ -33,10 +33,16 @@ func NewDirectory() *Directory {
 
 // Sync is a lazy implementation to refresh all of the module dependencies to the closest semver.
 func (d *Directory) Sync() {
+	names := make(map[string]bool, 0)
+
 	for _, vd := range d.modules {
 		for _, mod := range vd.versions {
 			// Flag this module as requiring to specify the version as we have multiple versions.
 			mod.nameWithVersion = len(vd.versions) > 1
+			if _, ok := names[mod.GetName()]; ok && SingleFileBuild {
+				mod.nameWithHost = true
+			}
+			names[mod.GetName()] = true
 			for i, dep := range mod.Deps {
 				closestMod := d.GetClosestModule(dep.Path, dep.Version)
 				if dep != closestMod {
