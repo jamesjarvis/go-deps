@@ -1,20 +1,63 @@
 package module
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
-	"time"
+	"text/template"
 
 	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
+)
+
+var SingleFileBuild = false
+
+const goModuleTemplateString = `
+go_module(
+  name = "{{ .GetName }}",
+  module = "{{ .Path }}",
+  version = "{{ .Version }}",
+  deps = [
+    {{- range .Deps }}
+    "{{ .GetFullyQualifiedName }}",
+    {{- end }}
+  ],
+  visibility = ["PUBLIC"],
+  install = ["..."],
+)
+`
+
+const goModuleDownloadTemplateString = `
+go_mod_download(
+  name = "{{ .GetDownloadName }}",
+  module = "{{ .Path }}",
+  version = "{{ .Version }}",
+  deps = [
+    {{- range .Deps }}
+    "{{ .GetFullyQualifiedName }}",
+    {{- end }}
+  ],
+  visibility = ["PUBLIC"],
+)
+
+go_module(
+  name = "{{ .GetName }}",
+  module = "{{ .Path }}",
+  download = "{{ .GetFullyQualifiedDownloadName }}",
+  visibility = ["PUBLIC"],
+  install = ["..."],
+)
+`
+
+var (
+	goModuleTemplater = template.Must(template.New("go_module").Parse(goModuleTemplateString))
+	goModuleDownloadTemplater = template.Must(template.New("go_mod_download").Parse(goModuleDownloadTemplateString))
 )
 
 // Module is the module object we want to add to the project, essentially just the module path
@@ -22,10 +65,12 @@ import (
 type Module struct {
 	Path string
 	Version string
+	Name string
 
 	Deps []*Module
 
 	downloaded bool
+	nameWithVersion bool
 	info string
 	goMod string
 	dir string
@@ -33,6 +78,7 @@ type Module struct {
 	goModSum string
 }
 
+// String returns a string representation of the module, with the module name and version.
 func (m *Module) String() string {
 	if m.Version == "" {
 		return m.Path
@@ -40,58 +86,105 @@ func (m *Module) String() string {
 	return fmt.Sprintf("%s@%s", m.Path, m.Version)
 }
 
+// GetName returns a please friendly name for the module, with info of the version if
+// multiple versions of the same module exist.
+func (m *Module) GetName() string {
+	if m.Name != "" {
+		return m.Name
+	}
+	splitPath := strings.Split(m.Path, "/")
+	modName := splitPath[len(splitPath)-1]
+	if splitPath[0] == "github.com" {
+		modName = strings.Join(splitPath[2:], "_")
+	}
+	if m.nameWithVersion {
+		return modName + "_" + semver.Major(m.Version)
+	}
+	return modName
+}
+
+// GetDownloadName returns a please friendly name for the module's go_mod_download rule.
+func (m *Module) GetDownloadName() string {
+	return m.GetName() + "_" + "download"
+}
+
+// GetBuildPath returns the path to the please BUILD file where this module is defined.
+func (m *Module) GetBuildPath() string {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	if SingleFileBuild {
+		return fmt.Sprintf("%s/third_party/go/BUILD", currentDir)
+	}
+	splitPath := strings.Split(m.Path, "/")
+	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+	if splitPath[0] == "github.com" {
+		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	}
+
+	return fmt.Sprintf("%s/third_party/go/%s/BUILD", currentDir, pathMinusEnd)
+}
+
+// GetFullyQualifiedName returns the please build target for this module.
+func (m *Module) GetFullyQualifiedName() string {
+	buildDir := ""
+	if !SingleFileBuild {
+		splitPath := strings.Split(m.Path, "/")
+		pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+		if splitPath[0] == "github.com" {
+			pathMinusEnd = strings.Join(splitPath[:2], "/")
+		}
+		buildDir = fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	} else {
+		buildDir = "third_party/go"
+	}
+
+	return "//" + buildDir + ":" + m.GetName()
+}
+
+// GetFullyQualifiedDownloadName returns the please build target for this module's go_mod_download rule.
+func (m *Module) GetFullyQualifiedDownloadName() string {
+	buildDir := ""
+	if !SingleFileBuild {
+		splitPath := strings.Split(m.Path, "/")
+		pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+		if splitPath[0] == "github.com" {
+			pathMinusEnd = strings.Join(splitPath[:2], "/")
+		}
+		buildDir = fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	} else {
+		buildDir = "third_party/go"
+	}
+
+	return "//" + buildDir + ":" + m.GetDownloadName()
+}
+
+// WriteGoModuleRule accepts an io.Writer interface and write the go_module build definition
+// for this module to it.
+func (m *Module) WriteGoModuleRule(wr io.Writer) error {
+	if m.nameWithVersion {
+		return goModuleDownloadTemplater.Execute(wr, m)
+	}
+	return goModuleTemplater.Execute(wr, m)
+}
+
 // Download downloads the go module into a temporary directory
 func (m *Module) Download(ctx context.Context) error {
-	goTool := host.FindGoTool()
-	dir := host.MustGetCacheDir()
-	env := append(os.Environ(), fmt.Sprintf("GOPATH=%s", dir))
-
-	cmd := exec.CommandContext(ctx, goTool, "mod", "download", "-json", m.String())
-	stderr := &bytes.Buffer{}
-	cmd.Stderr = stderr
-	cmd.Env = env
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil && len(out) == 0 {
-		return fmt.Errorf("command failed: %s: %w", stderr.String(), err)
-	}
-
-	type module struct {
-		Path, Version, Info, GoMod, Zip, Dir, Sum, GoModSum string
-		Error string
-	}
-
-	mod := new(module)
-	err = json.Unmarshal(out, mod)
+	downloadedModule, err := host.GoModDownload(ctx, m.String())
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal output: %w", err)
-	}
-	if mod.Error != "" {
-		// This is a little bit hacky, but if it's failed because we didn't run go get,
-		// we just do that here and retry.
-		// Download downloads the go module into a temporary directory
-		if strings.Contains(mod.Error, "not a known dependency") {
-			cmd := exec.CommandContext(ctx, goTool, "get", m.String())
-			cmd.Env = env
-			cmd.Dir = dir
-			if _, err := cmd.Output(); err != nil {
-				return fmt.Errorf("failed to run go get: %w", err)
-			}
-			return m.Download(ctx)
-		}
-	
-		return fmt.Errorf("failed to download module: %s", mod.Error)
+		return fmt.Errorf("failed to download go module: %w", err)
 	}
 
 	m.downloaded = true
 	if m.Version == "" {
-		m.Version = mod.Version
+		m.Version = downloadedModule.Version
 	}
-	m.info = mod.Info
-	m.goMod = mod.GoMod
-	m.goModSum = mod.GoModSum
-	m.sum = mod.Sum
-	m.dir = mod.Dir
+	m.info = downloadedModule.Info
+	m.goMod = downloadedModule.GoMod
+	m.goModSum = downloadedModule.GoModSum
+	m.sum = downloadedModule.Sum
+	m.dir = downloadedModule.Dir
 
 	// Add self to cache
 	storedModule := GlobalCache.SetModule(m)
@@ -99,6 +192,8 @@ func (m *Module) Download(ctx context.Context) error {
 		log.Printf("Dependencies change! We started with %s and now have %s", m, storedModule)
 		m = storedModule
 	}
+
+	log.Printf("Downloaded: %q\n", m.String())
 
 	return nil
 }
@@ -110,6 +205,9 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 	}
 
 	modulePath := m.goMod
+	if modulePath == "" {
+		return nil, fmt.Errorf("go.mod path not set: %s", modulePath)
+	}
 
 	goModBytes, err := ioutil.ReadFile(modulePath)
 	if err != nil {
@@ -139,6 +237,9 @@ func (m *Module) GetDependencies() ([]*Module, error) {
 	return modules, nil
 }
 
+// GetDependenciesRecursively downloads and stores the dependencies of the specified module, and all of
+// it's dependencies. You should only need to call this once at the root module, but if you call it
+// multiple times that should be a no-op.
 func (m *Module) GetDependenciesRecursively(ctx context.Context) ([]*Module, error) {
 	// We start a goroutine to pass the modules we want to fetch to.
 	// This goroutine is then self populated by the dependencies it then fetches.
@@ -157,7 +258,6 @@ func (m *Module) GetDependenciesRecursively(ctx context.Context) ([]*Module, err
 	var groupError error
 	go func(ctx context.Context){
 		for mod := range modules {
-			ctx, _ = context.WithTimeout(ctx, 30*time.Second)
 			if _, seen := seenMap[mod.String()]; seen {
 				// We have seen this before...
 				wg.Done()

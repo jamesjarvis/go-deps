@@ -3,7 +3,11 @@ package module
 import (
 	"fmt"
 	"log"
+	"os"
+	"sort"
+	"strings"
 
+	"github.com/jamesjarvis/go-deps/host"
 	"golang.org/x/mod/semver"
 )
 
@@ -31,6 +35,8 @@ func NewDirectory() *Directory {
 func (d *Directory) Sync() {
 	for _, vd := range d.modules {
 		for _, mod := range vd.versions {
+			// Flag this module as requiring to specify the version as we have multiple versions.
+			mod.nameWithVersion = len(vd.versions) > 1
 			for i, dep := range mod.Deps {
 				closestMod := d.GetClosestModule(dep.Path, dep.Version)
 				if dep != closestMod {
@@ -52,9 +58,23 @@ func (d *Directory) Write(writer Writer) {
 
 
 func (d *Directory) Print() {
-	for path, vd := range d.modules {
+	// Sort the paths to deterministically print output.
+	paths := make([]string, 0, len(d.modules))
+	for path := range d.modules {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		vd := d.modules[path]
 		fmt.Printf("MODULE: %s\n", path)
-		for version, mod := range vd.versions {
+		// Sort the versions to deterministically print output.
+		versions := make([]string, 0, len(vd.versions))
+		for version := range vd.versions {
+			versions = append(versions, version)
+		}
+		sort.Strings(versions)
+		for _, version := range versions {
+			mod := vd.versions[version]
 			fmt.Printf("\tVERSION: %s\n", version)
 			fmt.Printf("\t\t%s\n", mod.String())
 			if len(mod.Deps) > 0 {
@@ -65,6 +85,50 @@ func (d *Directory) Print() {
 			}
 		}
 	}
+}
+
+func (d *Directory) ExportBuildRules() error {
+	// Delete all existing third party build files.
+	err := host.RemoveAllThirdPartyFiles()
+	if err != nil {
+		return err
+	}
+	// Sort the paths to deterministically write build files.
+	paths := make([]string, 0, len(d.modules))
+	for path := range d.modules {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		vd := d.modules[path]
+		// Sort the versions to deterministically write build files.
+		versions := make([]string, 0, len(vd.versions))
+		for version := range vd.versions {
+			versions = append(versions, version)
+		}
+		sort.Strings(versions)
+		for _, version := range versions {
+			mod := vd.versions[version]
+			buildFilePath := mod.GetBuildPath()
+			if _, err := os.Stat(buildFilePath); os.IsNotExist(err) { 
+				err = os.MkdirAll(strings.TrimSuffix(buildFilePath, "/BUILD"), 0700) // Create the nested directory
+				if err != nil {
+					return fmt.Errorf("failed to create directory: %w", err)
+				}
+			}
+			f, err := os.OpenFile(buildFilePath,
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to open file: %w", err)
+			}
+			defer f.Close()
+			err = mod.WriteGoModuleRule(f)
+			if err != nil {
+				return fmt.Errorf("failed to append go_module to file: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (d *Directory) Get(path string) *VersionDirectory {
@@ -137,7 +201,7 @@ func (vd *VersionDirectory) GetVersion(version string) *Module {
 // or itself if no matches found.
 func (vd *VersionDirectory) GetClosestVersion(version string) string {
 	major := semver.Major(version)
-	for existingVers, _ := range vd.versions {
+	for existingVers := range vd.versions {
 		existingMajor := semver.Major(existingVers)
 		if major == existingMajor {
 			comparison := semver.Compare(version, existingVers)

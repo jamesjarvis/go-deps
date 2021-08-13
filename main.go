@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/jamesjarvis/go-deps/host"
 	"github.com/jamesjarvis/go-deps/module"
 	"github.com/urfave/cli/v2"
 )
@@ -12,6 +14,7 @@ import (
 const (
 	moduleFlag = "module"
 	versionFlag = "version"
+	singleFileFlag = "single_file"
 )
 
 // This binary will accept a module name and optionally a semver or commit hash, and will add this module to a BUILD file.
@@ -31,25 +34,40 @@ func main() {
 				Aliases: []string{"v"},
 				Usage:   "Version of the module to add",
 			},
+			&cli.BoolFlag{
+				Name:    singleFileFlag,
+				Aliases: []string{"s"},
+				Usage:   "Whether to export to single BUILD file",
+				Value: false,
+			},
 		},
-		Action: func(ctx *cli.Context) error {
+		Action: func(c *cli.Context) error {
+			ctx := context.TODO()
 			fmt.Println("Please Go Get v0.0.1")
 
+			alreadyExists, err := host.CreateGoMod(ctx)
+			if err != nil {
+				return err
+			}
+			if !alreadyExists {
+				defer host.TearDownGoMod(ctx)
+			}
+
+			module.SingleFileBuild = c.Bool(singleFileFlag)
+
 			m := &module.Module{
-				Path: ctx.String(moduleFlag),
-				Version: ctx.String(versionFlag),
+				Path: c.String(moduleFlag),
+				Version: c.String(versionFlag),
 			}
 
 			fmt.Printf("So, you want to add %q?\n", m.String())
 
-			err := m.Download(ctx.Context)
+			err = m.Download(ctx)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Congrats, you just downloaded %q\n", m.String())
-
-			_, err = m.GetDependenciesRecursively(ctx.Context)
+			_, err = m.GetDependenciesRecursively(ctx)
 			if err != nil {
 				return err
 			}
@@ -57,7 +75,7 @@ func main() {
 			module.GlobalCache.Sync()
 			module.GlobalCache.Print()
 
-			return nil
+			return module.GlobalCache.ExportBuildRules()
 		},
 	}
 
