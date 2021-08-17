@@ -54,14 +54,6 @@ func (d *Directory) Sync() {
 	}
 }
 
-type Writer interface {
-	Write(modules map[string]*VersionDirectory)
-}
-
-func (d *Directory) Write(writer Writer) {
-	writer.Write(d.modules)
-}
-
 
 func (d *Directory) Print() {
 	// Sort the paths to deterministically print output.
@@ -175,7 +167,6 @@ func (d *Directory) SetModule(mod *Module) *Module {
 	if vd == nil {
 		vd = NewVersionDirectory()
 	}
-	fmt.Println(mod.String())
 	fixedMod := vd.SetVersion(mod.Version, mod)
 	d.Set(mod.Path, vd)
 	return fixedMod
@@ -261,11 +252,9 @@ func (vd *VersionDirectory) SetVersion(version string, mod *Module) *Module {
 			return existingMod
 		}
 		if major == "v1" && existingMajor == "v0" {
-			println(1)
 			delete(vd.versions, existingVers)
 			vd.versions[version] = mod
 		} else if major == "v0" && existingMajor == "v1" {
-			println(2)
 			return existingMod
 		}
 	}
