@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/jamesjarvis/go-deps/resolve"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"strings"
 )
+
+type DownloadResponse struct {
+	Version string
+}
 
 // This is janky and mostly just to test if this thing works.
 func main() {
@@ -27,10 +33,12 @@ func main() {
 			deps += fmt.Sprintf("        \":%s\",\n", ruleName(dep.Name))
 		}
 
+		version := getVersion(module.Name)
+
 		fmt.Println("go_module(")
 		fmt.Printf("    name = \"%s\",\n", ruleName(module.Name))
 		fmt.Printf("    module = \"%s\",\n", module.Name)
-		fmt.Printf("    version = \"latest\",\n")
+		fmt.Printf("    version = \"%s\",\n", version)
 		if len(module.Install) != 1 || module.Install[0] != "" {
 			fmt.Printf("    install = [\n")
 			fmt.Printf(install)
@@ -46,11 +54,21 @@ func main() {
 	}
 }
 
+func getVersion(module string) string {
+	cmd := exec.Command("go", "mod", "download", "--json", module)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(err)
+	}
+
+	resp := new(DownloadResponse)
+	err = json.Unmarshal(out, resp)
+	if err != nil {
+		panic(err)
+	}
+	return resp.Version
+}
 
 func ruleName(path string) string {
-	name := filepath.Base(path)
-	if name == "v2" {
-		name = filepath.Base(filepath.Dir(path)) + "." + name
-	}
-	return name
+	return strings.ReplaceAll(path, "/", ".")
 }
