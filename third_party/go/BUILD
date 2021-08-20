@@ -43,3 +43,61 @@ go_module(
     module = "github.com/russross/blackfriday/v2",
     version = "v2.1.0",
 )
+
+go_module(
+    name = "go-difflib",
+    install = [
+        "difflib",
+    ],
+    module = "github.com/pmezard/go-difflib",
+    version = "latest",
+    deps = [
+    ],
+)
+
+go_module(
+    name = "yaml.v3",
+    install = [
+        "",
+    ],
+    module = "gopkg.in/yaml.v3",
+    version = "latest",
+)
+
+go_module(
+    name = "objx",
+    install = [
+        "",
+    ],
+    module = "github.com/stretchr/objx",
+    version = "latest",
+    deps = [
+    ],
+)
+
+go_module(
+    name = "testify",
+    install = [
+        "assert",
+        "require",
+        "http",
+        "mock",
+    ],
+    module = "github.com/stretchr/testify",
+    version = "latest",
+    deps = [
+        ":go-difflib",
+        ":go-spew",
+        ":objx",
+        ":yaml.v3",
+    ],
+)
+
+go_module(
+    name = "go-spew",
+    install = [
+        "spew",
+    ],
+    module = "github.com/davecgh/go-spew",
+    version = "latest",
+)
