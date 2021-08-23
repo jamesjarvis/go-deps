@@ -2,17 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/jamesjarvis/go-deps/resolve"
 	"os"
-	"os/exec"
-	"strings"
 )
 
-type DownloadResponse struct {
-	Version string
-}
+
 
 // This is janky and mostly just to test if this thing works.
 func main() {
@@ -21,25 +16,36 @@ func main() {
 		panic(err)
 	}
 
+	for _, dlRule := range modules.DownloadRules {
+		fmt.Println("go_mod_download(")
+		fmt.Printf("    name = \"%s\",\n", dlRule.Name)
+		fmt.Printf("    module = \"%s\",\n", dlRule.Module)
+		fmt.Printf("    version = \"%s\",\n", dlRule.Version)
+		fmt.Println(")")
+	}
 
-	for _, module := range modules {
+
+	for _, module := range modules.ModuleRules {
 		install := ""
-		for _, i := range module.Install {
+		for _, i := range module.Installs {
 			install += fmt.Sprintf("        \"%s\",\n", i)
 		}
 
 		deps := ""
 		for _, dep := range module.Deps {
-			deps += fmt.Sprintf("        \":%s\",\n", ruleName(dep.Name))
+			deps += fmt.Sprintf("        \":%s\",\n", dep)
 		}
 
-		version := getVersion(module.Name)
 
 		fmt.Println("go_module(")
-		fmt.Printf("    name = \"%s\",\n", ruleName(module.Name))
-		fmt.Printf("    module = \"%s\",\n", module.Name)
-		fmt.Printf("    version = \"%s\",\n", version)
-		if len(module.Install) != 1 || module.Install[0] != "" {
+		fmt.Printf("    name = \"%s\",\n", module.Name)
+		fmt.Printf("    module = \"%s\",\n", module.Module)
+		if module.Download != "" {
+			fmt.Printf("    download = \"%s\",\n", ":" + module.Download)
+		} else {
+			fmt.Printf("    version = \"%s\",\n", module.Version)
+		}
+		if len(module.Installs) != 1 || module.Installs[0] != "" {
 			fmt.Printf("    install = [\n")
 			fmt.Printf(install)
 			fmt.Printf("    ],\n")
@@ -51,24 +57,6 @@ func main() {
 		}
 
 		fmt.Println(")")
+		fmt.Println()
 	}
-}
-
-func getVersion(module string) string {
-	cmd := exec.Command("go", "mod", "download", "--json", module)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		panic(err)
-	}
-
-	resp := new(DownloadResponse)
-	err = json.Unmarshal(out, resp)
-	if err != nil {
-		panic(err)
-	}
-	return resp.Version
-}
-
-func ruleName(path string) string {
-	return strings.ReplaceAll(path, "/", ".")
 }

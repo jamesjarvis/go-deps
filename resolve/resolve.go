@@ -2,7 +2,10 @@ package resolve
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/jamesjarvis/go-deps/host"
+	"os/exec"
 	"strings"
 )
 
@@ -212,71 +215,249 @@ var KnownImports = map[string]struct{}{
 
 type resolver struct {
 	// pkgs is a map of import paths to their package
-	pkgs map[string]*Package
-	modules map[string]*Module
-	queue []string
-	KnownImports map[string]struct{}
+	pkgs         map[string]*Package
+	modules      map[string]*Module
+	queue        []string
+	knownImports map[string]struct{}
+	importPaths  map[string]*Module
+	moduleCounts map[string]int
 }
 
+// Package represents a single package in some module
 type Package struct {
+	// The full import path of this package
 	ImportPath string
+
+	// The module name this package belongs to
 	Module string
+
+	// Any other packages this package imports
 	Imports []*Package
+
+	// Whether this package has been resolved and the above fields are populated
 	resolved bool
 }
 
-type Module struct {
-	Name string
-	Deps []*Module
-	deps map[string]struct{}
-
-	Install []string
-	install map[string]struct{}
+func (pkg *Package) toInstall() string {
+	return strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
 }
 
+// Module represents a module. It includes all deps so actually represents a full module graph.
+type Module struct {
+	// The module name
+	Name string
+
+	// The postfix to apply to the rule
+	Postfix string
+
+	// Externally download with go_mod_download()
+	External bool
+
+	// The packages in this module
+	Packages map[*Package]struct{}
+}
+
+type ModuleGraph struct {
+	ModuleRules []*ModuleRule
+	DownloadRules []*DownloadRule
+}
+
+type ModuleRule struct {
+	Name string
+	Module string
+	Installs []string
+	Deps []string
+	Download string
+	Version string
+}
+
+type DownloadRule struct {
+	Name string
+	Module string
+	Version string
+}
+
+// cycleResolution represents the imports that need to be moved out of the "to" module in order to resolve this cycle
+type cycleResolution struct {
+	from *Module
+	to *Module
+	imports []*Package
+}
+
+func ruleName(path string) string {
+	return strings.ReplaceAll(path, "/", ".")
+}
+
+func (m *Module) Imports(importPaths map[string]*Module) map[*Package]struct{} {
+	ret := map[*Package]struct{}{}
+	for pkg := range m.Packages {
+		for _, i := range pkg.Imports {
+			mod := importPaths[i.ImportPath]
+			if mod == m {
+				continue
+			}
+			ret[i] = struct{}{}
+		}
+	}
+	return ret
+}
+
+func (r *resolver) resolveCycles(modules []*Module) []*Module {
+	for _, m := range modules {
+		for i := range m.Imports(r.importPaths) {
+			dep := r.importPaths[i.ImportPath]
+			c := r.findCycle(m, m, dep)
+			if c == nil {
+				continue
+			}
+
+			oldRule := c.to
+
+			// Mark the old rule as needing an external go_mod_download()
+			oldRule.External = true
+
+			count := r.moduleCounts[oldRule.Name]
+			count++
+			r.moduleCounts[oldRule.Name] = count
+
+			newRule := &Module{
+				Name:     oldRule.Name,
+				Postfix:  fmt.Sprintf("_%v", count), //TODO(jpoole): find out what index we're on
+				External: true,
+				Packages: map[*Package]struct{}{},
+			}
+
+			for _, pkg := range c.imports {
+				// Make imports to this package go to this new rule
+				r.importPaths[pkg.ImportPath] = newRule
+
+				// Move the installed package over from the old rule to the new rule
+				newRule.Packages[pkg] = struct{}{}
+				delete(oldRule.Packages, pkg)
+			}
+
+			return r.resolveCycles(append(modules, newRule))
+		}
+	}
+	return modules
+}
+
+func (r *resolver) dependsOn(pkg *Package, module *Module) bool {
+	if module == r.importPaths[pkg.ImportPath] {
+		return true
+	}
+	for _, i := range pkg.Imports {
+		if r.dependsOn(i, module) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *resolver) buildResolution(from *Module, to *Module, tryReverse bool) *cycleResolution {
+	c := &cycleResolution{
+		from: from,
+		to: to,
+	}
+
+	done := map[*Package]struct{}{}
+	for pkg := range c.from.Packages {
+		for _, i := range pkg.Imports {
+			if _, ok := done[i]; !ok && r.dependsOn(i, to) {
+				if r.dependsOn(i, c.from) {
+					continue
+				}
+				c.imports = append(c.imports, i)
+				done[i] = struct{}{}
+			}
+		}
+	}
+	if len(c.imports) == 0 {
+		if !tryReverse {
+			panic("couldn't find a resolution")
+		}
+		return r.buildResolution(to, from, false)
+	}
+	return c
+}
+
+func (r *resolver) findCycle(start *Module, last, next *Module) *cycleResolution {
+	if next == start {
+		return r.buildResolution(last, next, true)
+	}
+
+	for i := range next.Imports(r.importPaths) {
+		dep := r.importPaths[i.ImportPath]
+		if dep == next {
+			continue
+		}
+		if c := r.findCycle(start, next, dep); c != nil {
+			return c
+		}
+	}
+
+	return nil
+}
 
 // ResolveGet resolves a `go get` style wildcard into a graph of packages
-func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath string) ([]*Module, error) {
+func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath string) (*ModuleGraph, error) {
 	pkgs, err := host.GoListAll(ctx, getPath)
 	if err != nil {
 		return nil, err
 	}
 
 	r := &resolver{
-		pkgs: map[string]*Package{},
-		modules: map[string]*Module{},
-		queue: pkgs,
-		KnownImports: knownImports,
+		pkgs:         map[string]*Package{},
+		modules:      map[string]*Module{},
+		importPaths:  map[string]*Module{},
+		moduleCounts: map[string]int{},
+		queue:        pkgs,
+		knownImports: knownImports,
 	}
 
 	err = r.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, pkg := range r.pkgs {
 		module := r.getModule(pkg.Module)
+		module.Packages[pkg] = struct{}{}
+		r.importPaths[pkg.ImportPath] = module
 
 		for _, i := range pkg.Imports {
-			dep := r.getModule(i.Module)
-
-			install := strings.Trim(strings.TrimPrefix(i.ImportPath, i.Module), "/")
-			if _, ok := dep.install[install]; !ok {
-				dep.Install = append(dep.Install, install)
-				dep.install[install] = struct {}{}
-			}
-
-
-			if _, ok := module.deps[dep.Name]; i.Module != module.Name && !ok {
-				module.Deps = append(module.Deps, dep)
-				module.deps[dep.Name] = struct {}{}
+			if i.Module != module.Name {
+				module.Imports(r.importPaths)[i] = struct{}{}
 			}
 		}
 	}
 
-	ret := make([]*Module, 0, len(r.modules))
+	modules := make([]*Module, 0, len(r.modules))
 	for _, m := range r.modules {
-		ret = append(ret, m)
+		modules = append(modules, m)
 	}
 
-	return ret, err
+	modules = r.resolveCycles(modules)
+
+	ret := new(ModuleGraph)
+	ret.ModuleRules = make([]*ModuleRule, 0, len(modules))
+
+	dlRules := make(map[string]struct{})
+	for _, module := range modules {
+		ret.ModuleRules = append(ret.ModuleRules, r.toModuleRule(module))
+		if module.External {
+			if _, ok := dlRules[module.Name]; !ok {
+				ret.DownloadRules = append(ret.DownloadRules, &DownloadRule{
+					Name:    ruleName(module.Name) + "_dl",
+					Module:  module.Name,
+					Version: getVersion(module.Name),
+				})
+			}
+			dlRules[module.Name] = struct{}{}
+		}
+	}
+
+	return ret, nil
 }
 
 func (r *resolver) resolve(ctx context.Context) error {
@@ -297,7 +478,7 @@ func (r *resolver) resolve(ctx context.Context) error {
 		pkg.Module = resp.Module
 
 		for _, i := range resp.Imports {
-			if _, ok := r.KnownImports[i]; ok {
+			if _, ok := r.knownImports[i]; ok {
 				continue
 			}
 			if strings.HasPrefix(i, "vendor/") {
@@ -325,10 +506,59 @@ func (r *resolver) getModule(path string) *Module {
 	if !ok {
 		m = &Module{
 			Name: path,
-			install: map[string]struct{}{},
-			deps: map[string]struct{}{},
+			Packages: map[*Package]struct{}{},
 		}
 		r.modules[path] = m
 	}
 	return m
+}
+
+func (r *resolver) toModuleRule(module *Module) *ModuleRule {
+	rule := &ModuleRule{
+		Name: ruleName(module.Name) + module.Postfix,
+		Module: module.Name,
+	}
+	for pkg := range module.Packages {
+		rule.Installs = append(rule.Installs, pkg.toInstall())
+	}
+
+	if module.External {
+		rule.Download = ruleName(module.Name) + "_dl"
+	} else {
+		rule.Version = getVersion(module.Name)
+	}
+
+	done := map[string]struct{}{}
+	for i := range module.Imports(r.importPaths) {
+		dep := r.importPaths[i.ImportPath]
+		name := ruleName(dep.Name)
+		if dep.Postfix != "" {
+			name = name + dep.Postfix
+		}
+		if _, ok := done[name]; ok {
+			continue
+		}
+		done[name] = struct{}{}
+		rule.Deps = append(rule.Deps, name)
+	}
+	return rule
+}
+
+type DownloadResponse struct {
+	Version string
+}
+
+func getVersion(module string) string {
+	cmd := exec.Command("go", "mod", "download", "--json", module)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Errorf("failed to get module version: %v\n%v", err, string(out)))
+	}
+
+	resp := new(DownloadResponse)
+	err = json.Unmarshal(out, resp)
+	if err != nil {
+		panic(err)
+	}
+	return resp.Version
 }
