@@ -1,5 +1,8 @@
 go_library(
     name = "host",
-    srcs = ["host.go"],
+    srcs = [
+        "host.go",
+        "list.go",
+    ],
     visibility = ["PUBLIC"],
 )
