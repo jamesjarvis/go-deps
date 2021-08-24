@@ -1,226 +1,21 @@
 package resolve
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jamesjarvis/go-deps/host"
 	"os/exec"
 	"strings"
-)
 
-// TODO(jpoole): these could come from a .importconfig which might be cleaner
-var KnownImports = map[string]struct{}{
-	"archive/tar": {},
-	"archive/zip": {},
-	"bufio": {},
-	"bytes": {},
-	"compress/bzip2": {},
-	"compress/flate": {},
-	"compress/gzip": {},
-	"compress/lzw": {},
-	"compress/zlib": {},
-	"container/heap": {},
-	"container/list": {},
-	"container/ring": {},
-	"context": {},
-	"crypto/aes": {},
-	"crypto/cipher": {},
-	"crypto/des": {},
-	"crypto/dsa": {},
-	"crypto/ecdsa": {},
-	"crypto/ed25519": {},
-	"crypto/ed25519/internal/edwards25519": {},
-	"crypto/elliptic": {},
-	"crypto/elliptic/internal/fiat/please": {},
-	"crypto/hmac": {},
-	"crypto": {},
-	"crypto/internal/randutil": {},
-	"crypto/internal/subtle": {},
-	"crypto/md5": {},
-	"crypto/rand": {},
-	"crypto/rc4": {},
-	"crypto/rsa": {},
-	"crypto/sha1": {},
-	"crypto/sha256": {},
-	"crypto/sha512": {},
-	"crypto/subtle": {},
-	"crypto/tls": {},
-	"crypto/x509": {},
-	"crypto/x509/pkix": {},
-	"database/sql/driver": {},
-	"database/sql": {},
-	"debug/dwarf": {},
-	"debug/elf": {},
-	"debug/gosym": {},
-	"debug/macho": {},
-	"debug/pe": {},
-	"debug/plan9obj": {},
-	"embed": {},
-	"encoding/ascii85": {},
-	"encoding/asn1": {},
-	"encoding/base32": {},
-	"encoding/base64": {},
-	"encoding/binary": {},
-	"encoding/csv": {},
-	"encoding/gob": {},
-	"encoding/hex": {},
-	"encoding": {},
-	"encoding/json": {},
-	"encoding/pem": {},
-	"encoding/xml": {},
-	"errors": {},
-	"expvar": {},
-	"flag": {},
-	"fmt": {},
-	"go/ast": {},
-	"go/build/constraint": {},
-	"go/build": {},
-	"go/constant": {},
-	"go/doc": {},
-	"go/format": {},
-	"go/importer": {},
-	"go/internal/gccgoimporter": {},
-	"go/internal/gcimporter": {},
-	"go/internal/srcimporter": {},
-	"go/internal/typeparams": {},
-	"go/parser": {},
-	"go/printer": {},
-	"go/scanner": {},
-	"go/token": {},
-	"go/types": {},
-	"hash/adler32": {},
-	"hash/crc32": {},
-	"hash/crc64": {},
-	"hash/fnv": {},
-	"hash": {},
-	"hash/maphash": {},
-	"html": {},
-	"html/template": {},
-	"image/color": {},
-	"image/color/palette": {},
-	"image/draw": {},
-	"image/gif": {},
-	"image": {},
-	"image/internal/imageutil": {},
-	"image/jpeg": {},
-	"image/png": {},
-	"index/suffixarray": {},
-	"internal/abi": {},
-	"internal/buildcfg": {},
-	"internal/bytealg": {},
-	"internal/cfg": {},
-	"internal/cpu": {},
-	"internal/execabs": {},
-	"internal/fmtsort": {},
-	"internal/goexperiment": {},
-	"internal/goroot": {},
-	"internal/goversion": {},
-	"internal/itoa": {},
-	"internal/lazyregexp": {},
-	"internal/lazytemplate": {},
-	"internal/nettrace": {},
-	"internal/obscuretestdata": {},
-	"internal/oserror": {},
-	"internal/poll": {},
-	"internal/profile": {},
-	"internal/race": {},
-	"internal/reflectlite": {},
-	"internal/singleflight": {},
-	"internal/syscall/execenv": {},
-	"internal/syscall/unix": {},
-	"internal/sysinfo": {},
-	"internal/testenv": {},
-	"internal/testlog": {},
-	"internal/trace": {},
-	"internal/unsafeheader": {},
-	"internal/xcoff": {},
-	"io/fs": {},
-	"io": {},
-	"io/ioutil": {},
-	"log": {},
-	"log/syslog": {},
-	"math/big": {},
-	"math/bits": {},
-	"math/cmplx": {},
-	"math": {},
-	"math/rand": {},
-	"mime": {},
-	"mime/multipart": {},
-	"mime/quotedprintable": {},
-	"net": {},
-	"net/http/cgi": {},
-	"net/http/cookiejar": {},
-	"net/http/fcgi": {},
-	"net/http": {},
-	"net/http/httptest": {},
-	"net/http/httptrace": {},
-	"net/http/httputil": {},
-	"net/http/internal/ascii/please": {},
-	"net/http/internal": {},
-	"net/http/internal/testcert/please": {},
-	"net/http/pprof": {},
-	"net/internal/socktest": {},
-	"net/mail": {},
-	"net/rpc": {},
-	"net/rpc/jsonrpc": {},
-	"net/smtp": {},
-	"net/textproto": {},
-	"net/url": {},
-	"os/exec": {},
-	"os": {},
-	"os/signal": {},
-	"os/signal/internal/pty/please": {},
-	"os/user": {},
-	"path/filepath": {},
-	"path": {},
-	"plugin": {},
-	"reflect": {},
-	"reflect/internal/example1": {},
-	"reflect/internal/example2": {},
-	"regexp": {},
-	"regexp/syntax": {},
-	"runtime/cgo": {},
-	"runtime/debug": {},
-	"runtime": {},
-	"runtime/internal/atomic": {},
-	"runtime/internal/math": {},
-	"runtime/internal/sys": {},
-	"runtime/metrics": {},
-	"runtime/pprof": {},
-	"runtime/race": {},
-	"runtime/trace": {},
-	"sort": {},
-	"strconv": {},
-	"strings": {},
-	"sync/atomic": {},
-	"sync": {},
-	"syscall": {},
-	"testing/fstest": {},
-	"testing": {},
-	"testing/internal/testdeps": {},
-	"testing/iotest": {},
-	"testing/quick": {},
-	"text/scanner": {},
-	"text/tabwriter": {},
-	"text/template": {},
-	"text/template/parse": {},
-	"time": {},
-	"time/tzdata": {},
-	"unicode": {},
-	"unicode/utf16": {},
-	"unicode/utf8": {},
-	"unsafe": {},
-}
+	"golang.org/x/tools/go/packages"
+)
 
 type resolver struct {
 	// pkgs is a map of import paths to their package
-	pkgs         map[string]*Package
-	modules      map[string]*Module
-	queue        []string
-	knownImports map[string]struct{}
-	importPaths  map[*Package]*ModulePart
-	moduleCounts map[string]int
+	pkgs           map[string]*Package
+	modules        map[string]*Module
+	importPaths    map[*Package]*ModulePart
+	moduleCounts   map[string]int
+	rootModuleName string
 }
 
 // Package represents a single package in some module
@@ -233,9 +28,6 @@ type Package struct {
 
 	// Any other packages this package imports
 	Imports []*Package
-
-	// Whether this package has been resolved and the above fields are populated
-	resolved bool
 }
 
 func (pkg *Package) toInstall() string {
@@ -321,6 +113,11 @@ func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Pack
 		r.addPackageToModuleGraph(done, i)
 	}
 
+	// We don't need to add the current module to the module graph
+	if r.rootModuleName == pkg.Module {
+		return
+	}
+
 	m := r.getModule(pkg.Module)
 
 
@@ -353,10 +150,20 @@ func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Pack
 	done[pkg] = struct{}{}
 }
 
+func getModuleName(config *packages.Config) string {
+	pkgs, err := packages.Load(config, ".")
+	if err != nil {
+		panic(fmt.Errorf("failed to get root package name: %v", err))
+	}
+	return pkgs[0].Module.Path
+}
 
 // ResolveGet resolves a `go get` style wildcard into a graph of packages
-func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath string) ([]*ModuleRules, error) {
-	pkgs, err := host.GoListAll(ctx, getPath)
+func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
+	config := &packages.Config{
+		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName,
+	}
+	pkgs, err := packages.Load(config, getPaths...)
 	if err != nil {
 		return nil, err
 	}
@@ -366,14 +173,10 @@ func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath s
 		modules:      map[string]*Module{},
 		importPaths:  map[*Package]*ModulePart{},
 		moduleCounts: map[string]int{},
-		queue:        pkgs,
-		knownImports: knownImports,
+		rootModuleName: getModuleName(config),
 	}
 
-	err = r.resolve(ctx)
-	if err != nil {
-		return nil, err
-	}
+	r.resolve(pkgs)
 
 	done := make(map[*Package]struct{}, len(pkgs))
 	for _, pkg := range r.pkgs {
@@ -384,6 +187,7 @@ func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath s
 	for _, m := range r.modules {
 		modules = append(modules, m)
 	}
+
 
 	ret := make([]*ModuleRules, 0, len(r.modules))
 	for _, m := range r.modules {
@@ -408,7 +212,14 @@ func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath s
 
 			done := map[string]struct{}{}
 			for pkg := range part.Packages {
-				modRule.Installs = append(modRule.Installs, pkg.toInstall())
+				install := pkg.toInstall()
+				// TODO(jpoole): we should probably just sort these alphabetically with an exception to put "." at the
+				//  front
+				if install == "." {
+					modRule.Installs = append([]string{install}, modRule.Installs...)
+				} else {
+					modRule.Installs = append(modRule.Installs, pkg.toInstall())
+				}
 				for _, i := range pkg.Imports {
 					dep := r.importPaths[i]
 					depRuleName := partName(dep)
@@ -436,45 +247,42 @@ func ResolveGet(ctx context.Context, knownImports map[string]struct{}, getPath s
 	return ret, nil
 }
 
-func (r *resolver) resolve(ctx context.Context) error {
-	for len(r.queue) > 0 {
-		next := r.queue[0]
-		r.queue = r.queue[1:]
 
-		pkg := r.getPackage(next)
-		if pkg.resolved {
-			continue
+func (r *resolver) resolve(pkgs []*packages.Package) {
+
+	for _, p := range pkgs {
+		pkg, _ := r.getOrCreatePackage(p.PkgPath)
+		pkg.Module = p.Module.Path
+		if pkg.Module == "" {
+			panic(fmt.Errorf("no module for %v", p.PkgPath))
 		}
 
-		resp, err := host.GoList(ctx, next)
-		if err != nil {
-			return err
-		}
-
-		pkg.Module = resp.Module
-
-		for _, i := range resp.Imports {
-			if _, ok := r.knownImports[i]; ok {
+		newPackages := make([]*packages.Package, 0, len(p.Imports))
+		for i, iPkg := range p.Imports {
+			if _, ok := KnownImports[i]; ok {
 				continue
 			}
 			if strings.HasPrefix(i, "vendor/") {
 				continue
 			}
-			pkg.Imports = append(pkg.Imports, r.getPackage(i))
+			newPkg, created := r.getOrCreatePackage(i)
+			pkg.Imports = append(pkg.Imports, newPkg)
+			if created {
+				newPackages = append(newPackages, iPkg)
+			}
 		}
-		pkg.resolved = true
+		r.resolve(newPackages)
 	}
-	return nil
 }
 
-func (r *resolver) getPackage(path string) *Package {
+// getOrCreatePackage gets an existing package or creates a new one. Returns true when a new package was creawed.
+func (r *resolver) getOrCreatePackage(path string) (*Package, bool) {
 	if pkg, ok := r.pkgs[path]; ok {
-		return pkg
+		return pkg, false
 	}
 	pkg := &Package{ImportPath: path, Imports: []*Package{}}
 	r.pkgs[path] = pkg
-	r.queue = append(r.queue, path)
-	return pkg
+	return pkg, true
 }
 
 func (r *resolver) getModule(path string) *Module {
@@ -496,7 +304,7 @@ func getVersion(module string) string {
 	cmd := exec.Command("go", "mod", "download", "--json", module)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		panic(fmt.Errorf("failed to get module version: %v\n%v", err, string(out)))
+		panic(fmt.Errorf("failed to get module version for %v: %v\n%v", module, err, string(out)))
 	}
 
 	resp := new(DownloadResponse)

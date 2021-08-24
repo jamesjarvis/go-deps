@@ -1,103 +1,89 @@
 package(default_visibility = ["PUBLIC"])
 
+# To generate: plz run //resolve/cmd -- ./...
+
 go_module(
-    name = "mod",
-    install = [
-        "semver",
-        "modfile",
-        "internal/lazyregexp",
-        "module",
-    ],
+    name = "golang.org.x.mod",
     module = "golang.org/x/mod",
-    version = "v0.5.0",
-    deps = [":xerrors"],
+    version = "v0.4.2",
+    install = [
+        "module",
+        "modfile",
+        "semver",
+        "internal/lazyregexp",
+    ],
+    deps = [
+        ":golang.org.x.xerrors",
+    ],
 )
 
 go_module(
-    name = "xerrors",
+    name = "golang.org.x.sys",
+    module = "golang.org/x/sys",
+    version = "v0.0.0-20210603081109-ebe580a85c40",
+    install = [
+        "execabs",
+    ],
+)
+
+go_module(
+    name = "golang.org.x.tools",
+    module = "golang.org/x/tools",
+    version = "v0.1.2",
+    install = [
+        "internal/event/core",
+        "go/gcexportdata",
+        "go/packages",
+        "internal/gocommand",
+        "internal/packagesinternal",
+        "internal/typesinternal",
+        "go/internal/gcimporter",
+        "go/internal/packagesdriver",
+        "internal/event/label",
+        "internal/event/keys",
+        "internal/event",
+    ],
+    deps = [
+        ":golang.org.x.xerrors",
+        ":golang.org.x.sys",
+        ":golang.org.x.mod",
+    ],
+)
+
+go_module(
+    name = "golang.org.x.xerrors",
+    module = "golang.org/x/xerrors",
+    version = "v0.0.0-20200804184101-5ec99f83aff1",
     install = [
         ".",
         "internal",
     ],
-    module = "golang.org/x/xerrors",
-    version = "v0.0.0-20200804184101-5ec99f83aff1",
 )
 
 go_module(
-    name = "cli.v2",
-    module = "github.com/urfave/cli/v2",
-    version = "v2.3.0",
-    deps = [":md2man.v2"],
-)
-
-go_module(
-    name = "md2man.v2",
-    install = ["..."],
-    module = "github.com/cpuguy83/go-md2man/v2",
-    version = "v2.0.1",
-    deps = [":blackfriday.v2"],
-)
-
-go_module(
-    name = "blackfriday.v2",
+    name = "github.com.russross.blackfriday.v2",
     module = "github.com/russross/blackfriday/v2",
     version = "v2.1.0",
 )
 
 go_module(
-    name = "go-difflib",
+    name = "github.com.cpuguy83.go-md2man.v2",
+    module = "github.com/cpuguy83/go-md2man/v2",
+    version = "v2.0.1",
     install = [
-        "difflib",
+        "md2man",
     ],
-    module = "github.com/pmezard/go-difflib",
-    version = "latest",
     deps = [
+        ":github.com.russross.blackfriday.v2",
     ],
 )
 
 go_module(
-    name = "yaml.v3",
-    install = [
-        "",
-    ],
-    module = "gopkg.in/yaml.v3",
-    version = "latest",
-)
-
-go_module(
-    name = "objx",
-    install = [
-        "",
-    ],
-    module = "github.com/stretchr/objx",
-    version = "latest",
+    name = "github.com.urfave.cli.v2",
+    module = "github.com/urfave/cli/v2",
+    version = "v2.3.0",
     deps = [
+        ":github.com.cpuguy83.go-md2man.v2",
     ],
 )
 
-go_module(
-    name = "testify",
-    install = [
-        "assert",
-        "require",
-        "http",
-        "mock",
-    ],
-    module = "github.com/stretchr/testify",
-    version = "latest",
-    deps = [
-        ":go-difflib",
-        ":go-spew",
-        ":objx",
-        ":yaml.v3",
-    ],
-)
-
-go_module(
-    name = "go-spew",
-    install = [
-        "spew",
-    ],
-    module = "github.com/davecgh/go-spew",
-    version = "latest",
-)

@@ -1,17 +1,17 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"github.com/jamesjarvis/go-deps/resolve"
 	"os"
+
+	"github.com/jamesjarvis/go-deps/resolve"
 )
 
 
 
 // This is janky and mostly just to test if this thing works.
 func main() {
-	rules, err := resolve.ResolveGet(context.Background(), resolve.KnownImports, os.Args[1])
+	rules, err := resolve.ResolveGet(os.Args[1:])
 	if err != nil {
 		panic(err)
 	}

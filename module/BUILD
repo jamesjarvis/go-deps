@@ -7,6 +7,6 @@ go_library(
     visibility = ["PUBLIC"],
     deps = [
         "//host",
-        "//third_party/go:mod",
+        "//third_party/go:golang.org.x.mod",
     ],
 )
