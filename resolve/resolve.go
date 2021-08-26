@@ -10,6 +10,9 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+const clearLineSequence = "\x1b[1G\x1b[2K"
+
+
 type resolver struct {
 	// pkgs is a map of import paths to their package
 	pkgs           map[string]*Package
@@ -52,18 +55,14 @@ type ModulePart struct {
 	Index int
 }
 
-
-func ruleName(path, suffix string) string {
-	return 	strings.ReplaceAll(path, "/", ".") + suffix
-}
-
-func partName(part *ModulePart) string {
-	displayIndex := len(part.Module.Parts) - part.Index
-
-	if displayIndex > 0 {
-		return ruleName(part.Module.Name, fmt.Sprintf("_%d", displayIndex))
+func newResolver(rootModuleName string) *resolver {
+	return &resolver{
+		pkgs:         map[string]*Package{},
+		modules:      map[string]*Module{},
+		importPaths:  map[*Package]*ModulePart{},
+		moduleCounts: map[string]int{},
+		rootModuleName: rootModuleName,
 	}
-	return ruleName(part.Module.Name, "")
 }
 
 func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
@@ -166,74 +165,16 @@ func toInstall(pkg *Package) string {
 	return install
 }
 
-func (r *resolver) generateModules() ([]*ModuleRules, error) {
-	processed := 0
-	ret := make([]*ModuleRules, 0, len(r.modules))
-	for _, m := range r.modules {
-		rules := new(ModuleRules)
-		ret = append(ret, rules)
-
-		if len(m.Parts) > 1 {
-			rules.Download = &DownloadRule{
-				Name:    ruleName(m.Name, "_dl"),
-				Module:  m.Name,
-				Version: m.Version,
-			}
-		} else {
-			rules.Version = m.Version
-		}
-
-		for _, part := range m.Parts {
-			modRule := &ModuleRule{
-				Name:   partName(part),
-				Module: m.Name,
-			}
-
-			done := map[string]struct{}{}
-			for pkg := range part.Packages {
-				install := toInstall(pkg)
-				// TODO(jpoole): we should probably just sort these alphabetically with an exception to put "." at the
-				//  front
-				if install == "." {
-					modRule.Installs = append([]string{install}, modRule.Installs...)
-				} else {
-					modRule.Installs = append(modRule.Installs, toInstall(pkg))
-				}
-				for _, i := range pkg.Imports {
-					dep := r.importPaths[i]
-					depRuleName := partName(dep)
-					if _, ok := done[depRuleName]; ok || dep.Module == m {
-						continue
-					}
-					done[depRuleName] = struct{}{}
-
-					modRule.Deps = append(modRule.Deps, depRuleName)
-				}
-			}
-
-			// The last part is the namesake and should export the rest of the parts.
-			if part.Index == len(m.Parts) {
-				for _, part := range m.Parts[:(len(m.Parts)-1)] {
-					modRule.ExportedDeps = append(modRule.ExportedDeps, partName(part))
-				}
-			}
-
-			// Add them in reverse order so the namesake appears first
-			rules.Mods = append([]*ModuleRule{modRule}, rules.Mods...)
-		}
-		processed++
-		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(r.modules))
-	}
-	fmt.Fprintln(os.Stderr)
-	return ret, nil
-}
 
 // ResolveGet resolves a `go get` style wildcard into a graph of packages
 func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 	fmt.Fprintf(os.Stderr, "Analysing packages...")
+
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName,
 	}
+	r := newResolver(getCurrentModuleName(config))
+
 	pkgs, err := packages.Load(config, getPaths...)
 	if err != nil {
 		return nil, err
@@ -242,24 +183,10 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 	fmt.Fprintf(os.Stderr, " Done.\n")
 
 
-	r := newResolver(getCurrentModuleName(config))
-
 	r.resolve(pkgs)
 	r.addPackagesToModules()
 	return r.generateModules()
 }
-
-func newResolver(rootModuleName string) *resolver {
-	return &resolver{
-		pkgs:         map[string]*Package{},
-		modules:      map[string]*Module{},
-		importPaths:  map[*Package]*ModulePart{},
-		moduleCounts: map[string]int{},
-		rootModuleName: rootModuleName,
-	}
-}
-
-const clearLineSequence = "\x1b[1G\x1b[2K"
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
 	for _, p := range pkgs {
@@ -272,9 +199,6 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 		newPackages := make([]*packages.Package, 0, len(p.Imports))
 		for importName, importedPkg := range p.Imports {
 			if _, ok := KnownImports[importName]; ok {
-				continue
-			}
-			if strings.HasPrefix(importName, "vendor/") {
 				continue
 			}
 			newPkg, created := r.getOrCreatePackage(importName)

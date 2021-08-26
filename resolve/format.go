@@ -1,6 +1,10 @@
 package resolve
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"strings"
+)
 
 // ModuleRules contains all the build rules for a given module
 type ModuleRules struct {
@@ -26,6 +30,84 @@ type DownloadRule struct {
 	Name string
 	Module string
 	Version string
+}
+
+func ruleName(path, suffix string) string {
+	return 	strings.ReplaceAll(path, "/", ".") + suffix
+}
+
+func partName(part *ModulePart) string {
+	displayIndex := len(part.Module.Parts) - part.Index
+
+	if displayIndex > 0 {
+		return ruleName(part.Module.Name, fmt.Sprintf("_%d", displayIndex))
+	}
+	return ruleName(part.Module.Name, "")
+}
+
+func (r *resolver) generateModules() ([]*ModuleRules, error) {
+	processed := 0
+	ret := make([]*ModuleRules, 0, len(r.modules))
+	for _, m := range r.modules {
+		rules := new(ModuleRules)
+		ret = append(ret, rules)
+
+		if len(m.Parts) > 1 {
+			rules.Download = &DownloadRule{
+				Name:    ruleName(m.Name, "_dl"),
+				Module:  m.Name,
+				Version: m.Version,
+			}
+		} else {
+			rules.Version = m.Version
+			if m.Version == "" {
+				m.Version = getVersion(m.Name)
+			}
+		}
+
+		for _, part := range m.Parts {
+			modRule := &ModuleRule{
+				Name:   partName(part),
+				Module: m.Name,
+			}
+
+			done := map[string]struct{}{}
+			for pkg := range part.Packages {
+				install := toInstall(pkg)
+				// TODO(jpoole): we should probably just sort these alphabetically with an exception to put "." at the
+				//  front
+				if install == "." {
+					modRule.Installs = append([]string{install}, modRule.Installs...)
+				} else {
+					modRule.Installs = append(modRule.Installs, toInstall(pkg))
+				}
+				for _, i := range pkg.Imports {
+					dep := r.importPaths[i]
+					depRuleName := partName(dep)
+					if _, ok := done[depRuleName]; ok || dep.Module == m {
+						continue
+					}
+					done[depRuleName] = struct{}{}
+
+					modRule.Deps = append(modRule.Deps, depRuleName)
+				}
+			}
+
+			// The last part is the namesake and should export the rest of the parts.
+			if part.Index == len(m.Parts) {
+				for _, part := range m.Parts[:(len(m.Parts)-1)] {
+					modRule.ExportedDeps = append(modRule.ExportedDeps, partName(part))
+				}
+			}
+
+			// Add them in reverse order so the namesake appears first
+			rules.Mods = append([]*ModuleRule{modRule}, rules.Mods...)
+		}
+		processed++
+		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(r.modules))
+	}
+	fmt.Fprintln(os.Stderr)
+	return ret, nil
 }
 
 // Print will print the rules for this module
@@ -59,9 +141,6 @@ func (module *ModuleRules) Print() {
 		fmt.Printf("    name = \"%s\",\n", modRule.Name)
 		fmt.Printf("    module = \"%s\",\n", modRule.Module)
 
-		if module.Version == "" {
-			module.Version = getVersion(modRule.Module)
-		}
 		if module.Download != nil {
 			fmt.Printf("    download = \"%s\",\n", ":" + module.Download.Name)
 		} else {
