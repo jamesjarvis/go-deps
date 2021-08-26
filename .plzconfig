@@ -9,6 +9,6 @@
 ; version = 16.5.1
 
 [go]
-;gotool = ...
+gotool = //third_party/go:toolchain|go
 ;goroot - ... 
 importpath = github.com/jamesjarvis/go-deps

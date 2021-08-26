@@ -59,9 +59,10 @@ func (r *resolver) generateModules() ([]*ModuleRules, error) {
 				Version: m.Version,
 			}
 		} else {
-			rules.Version = m.Version
 			if m.Version == "" {
-				m.Version = getVersion(m.Name)
+				rules.Version = getVersion(m.Name)
+			} else {
+				rules.Version = m.Version
 			}
 		}
 

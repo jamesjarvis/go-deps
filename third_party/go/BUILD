@@ -1,7 +1,12 @@
 package(default_visibility = ["PUBLIC"])
 
-# To generate: plz run //resolve/cmd -- ./...
+go_toolchain(
+    name = "toolchain",
+    version = "1.16",
+)
 
+
+# To generate: plz run //resolve/cmd -- ./...
 go_module(
     name = "golang.org.x.mod",
     module = "golang.org/x/mod",

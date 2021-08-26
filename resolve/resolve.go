@@ -1,7 +1,6 @@
 package resolve
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -171,7 +170,7 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 	fmt.Fprintf(os.Stderr, "Analysing packages...")
 
 	config := &packages.Config{
-		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName,
+		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
 	}
 	r := newResolver(getCurrentModuleName(config))
 
@@ -190,6 +189,9 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
 	for _, p := range pkgs {
+		if len(p.GoFiles) + len(p.OtherFiles) == 0 {
+			continue
+		}
 		pkg, _ := r.getOrCreatePackage(p.PkgPath)
 		pkg.Module = p.Module.Path
 		if pkg.Module == "" {
@@ -237,21 +239,12 @@ func (r *resolver) getModule(path string) *Module {
 	return m
 }
 
-type DownloadResponse struct {
-	Version string
-}
-
 func getVersion(module string) string {
-	cmd := exec.Command("go", "mod", "download", "--json", module)
+	cmd := exec.Command("go", "list", "-m", module)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		panic(fmt.Errorf("failed to get module version for %v: %v\n%v", module, err, string(out)))
 	}
 
-	resp := new(DownloadResponse)
-	err = json.Unmarshal(out, resp)
-	if err != nil {
-		panic(err)
-	}
-	return resp.Version
+	return strings.Trim(strings.Split(string(out), " ")[1], "\n")
 }
