@@ -3,6 +3,7 @@ package resolve
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -30,22 +31,19 @@ type Package struct {
 	Imports []*Package
 }
 
-func (pkg *Package) toInstall() string {
-	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
-	if install == "" {
-		return "."
-	}
-	return install
-}
 
 // Module represents a module. It includes all deps so actually represents a full module graph.
 type Module struct {
 	// The module name
 	Name string
 
+	Version string
+
 	Parts []*ModulePart
 }
 
+// ModulePart essentially corresponds to a `go_module()` rule that compiles some (or all) packages from that module. In
+// most cases, there's one part per module except where we need to split it out to resolve a cycle.
 type ModulePart struct {
 	Module *Module
 	// The packages in this module
@@ -54,26 +52,6 @@ type ModulePart struct {
 	Index int
 }
 
-
-type ModuleRules struct {
-	Download *DownloadRule
-	Version string
-	Mods []*ModuleRule
-}
-
-type ModuleRule struct {
-	Name string
-	Module string
-	Installs []string
-	Deps []string
-	ExportedDeps []string
-}
-
-type DownloadRule struct {
-	Name string
-	Module string
-	Version string
-}
 
 func ruleName(path, suffix string) string {
 	return 	strings.ReplaceAll(path, "/", ".") + suffix
@@ -88,46 +66,40 @@ func partName(part *ModulePart) string {
 	return ruleName(part.Module.Name, "")
 }
 
-func (r *resolver) dependsOn(pkg *Package, module *ModulePart, leftModule bool) bool {
-	if leftModule && module == r.importPaths[pkg] {
+func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
+	if _, ok := done[pkg]; ok {
+		return false
+	}
+	done[pkg] = struct{}{}
+	pkgModule := r.importPaths[pkg]
+
+	if module == pkgModule {
 		return true
 	}
-	if module != r.importPaths[pkg] {
-		leftModule = true
-	}
-	for _, i := range pkg.Imports {
-		if r.dependsOn(i, module, leftModule) {
-			return true
+	for pkg := range pkgModule.Packages {
+		for _, i := range pkg.Imports {
+			if r.dependsOn(done, i, module) {
+				return true
+			}
 		}
 	}
+
 	return false
 }
 
-
-func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Package) {
-	if _, ok := done[pkg]; ok {
-		return
-	}
-
-	for _, i := range pkg.Imports {
-		r.addPackageToModuleGraph(done, i)
-	}
-
-	// We don't need to add the current module to the module graph
-	if r.rootModuleName == pkg.Module {
-		return
-	}
-
-	m := r.getModule(pkg.Module)
-
-
+// getOrCreateModulePart gets or create a module part that we can add this package to without causing a cycle
+func (r *resolver) getOrCreateModulePart(m *Module, pkg *Package) *ModulePart {
 	var validPart *ModulePart
 	for _, part := range m.Parts {
 		valid := true
+		done := map[*Package]struct{}{}
 		for _, i := range pkg.Imports {
-			if r.dependsOn(i, part, false) {
-				valid = false
-				break
+			// Check all the imports that leave the current part
+			if r.importPaths[i] != part {
+				if r.dependsOn(done, i, part) {
+					valid = false
+					break
+				}
 			}
 		}
 		if valid {
@@ -143,14 +115,32 @@ func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Pack
 		}
 		m.Parts = append(m.Parts, validPart)
 	}
+	return validPart
+}
 
-	validPart.Packages[pkg] = struct{}{}
-	r.importPaths[pkg] = validPart
+func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Package) {
+	if _, ok := done[pkg]; ok {
+		return
+	}
+
+	for _, i := range pkg.Imports {
+		r.addPackageToModuleGraph(done, i)
+	}
+
+	// We don't need to add the current module to the module graph
+	if r.rootModuleName == pkg.Module {
+		return
+	}
+
+
+	part := r.getOrCreateModulePart(r.getModule(pkg.Module), pkg)
+	part.Packages[pkg] = struct{}{}
+	r.importPaths[pkg] = part
 
 	done[pkg] = struct{}{}
 }
 
-func getModuleName(config *packages.Config) string {
+func getCurrentModuleName(config *packages.Config) string {
 	pkgs, err := packages.Load(config, ".")
 	if err != nil {
 		panic(fmt.Errorf("failed to get root package name: %v", err))
@@ -158,37 +148,26 @@ func getModuleName(config *packages.Config) string {
 	return pkgs[0].Module.Path
 }
 
-// ResolveGet resolves a `go get` style wildcard into a graph of packages
-func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
-	config := &packages.Config{
-		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName,
-	}
-	pkgs, err := packages.Load(config, getPaths...)
-	if err != nil {
-		return nil, err
-	}
-
-	r := &resolver{
-		pkgs:         map[string]*Package{},
-		modules:      map[string]*Module{},
-		importPaths:  map[*Package]*ModulePart{},
-		moduleCounts: map[string]int{},
-		rootModuleName: getModuleName(config),
-	}
-
-	r.resolve(pkgs)
-
-	done := make(map[*Package]struct{}, len(pkgs))
+func (r *resolver) addPackagesToModules() {
+	processed := 0
+	done := map[*Package]struct{}{}
 	for _, pkg := range r.pkgs {
 		r.addPackageToModuleGraph(done, pkg)
+		processed++
+		fmt.Fprintf(os.Stderr, "%sBuilding module graph... %d of %d packages.", clearLineSequence, processed, len(r.pkgs))
 	}
+}
 
-	modules := make([]*Module, 0, len(r.modules))
-	for _, m := range r.modules {
-		modules = append(modules, m)
+func toInstall(pkg *Package) string {
+	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
+	if install == "" {
+		return "."
 	}
+	return install
+}
 
-
+func (r *resolver) generateModules() ([]*ModuleRules, error) {
+	processed := 0
 	ret := make([]*ModuleRules, 0, len(r.modules))
 	for _, m := range r.modules {
 		rules := new(ModuleRules)
@@ -198,10 +177,10 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 			rules.Download = &DownloadRule{
 				Name:    ruleName(m.Name, "_dl"),
 				Module:  m.Name,
-				Version: getVersion(m.Name),
+				Version: m.Version,
 			}
 		} else {
-			rules.Version = getVersion(m.Name)
+			rules.Version = m.Version
 		}
 
 		for _, part := range m.Parts {
@@ -212,13 +191,13 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 
 			done := map[string]struct{}{}
 			for pkg := range part.Packages {
-				install := pkg.toInstall()
+				install := toInstall(pkg)
 				// TODO(jpoole): we should probably just sort these alphabetically with an exception to put "." at the
 				//  front
 				if install == "." {
 					modRule.Installs = append([]string{install}, modRule.Installs...)
 				} else {
-					modRule.Installs = append(modRule.Installs, pkg.toInstall())
+					modRule.Installs = append(modRule.Installs, toInstall(pkg))
 				}
 				for _, i := range pkg.Imports {
 					dep := r.importPaths[i]
@@ -232,24 +211,57 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 				}
 			}
 
+			// The last part is the namesake and should export the rest of the parts.
 			if part.Index == len(m.Parts) {
-				// TODO(jpoole): is this a safe assumption? Can we have more than 2 parts ot a
 				for _, part := range m.Parts[:(len(m.Parts)-1)] {
 					modRule.ExportedDeps = append(modRule.ExportedDeps, partName(part))
 				}
 			}
 
-			rules.Mods = append(rules.Mods, modRule)
+			// Add them in reverse order so the namesake appears first
+			rules.Mods = append([]*ModuleRule{modRule}, rules.Mods...)
 		}
+		processed++
+		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(r.modules))
 	}
-
-
+	fmt.Fprintln(os.Stderr)
 	return ret, nil
 }
 
+// ResolveGet resolves a `go get` style wildcard into a graph of packages
+func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
+	fmt.Fprintf(os.Stderr, "Analysing packages...")
+	config := &packages.Config{
+		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName,
+	}
+	pkgs, err := packages.Load(config, getPaths...)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, " Done.\n")
+
+
+	r := newResolver(getCurrentModuleName(config))
+
+	r.resolve(pkgs)
+	r.addPackagesToModules()
+	return r.generateModules()
+}
+
+func newResolver(rootModuleName string) *resolver {
+	return &resolver{
+		pkgs:         map[string]*Package{},
+		modules:      map[string]*Module{},
+		importPaths:  map[*Package]*ModulePart{},
+		moduleCounts: map[string]int{},
+		rootModuleName: rootModuleName,
+	}
+}
+
+const clearLineSequence = "\x1b[1G\x1b[2K"
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
-
 	for _, p := range pkgs {
 		pkg, _ := r.getOrCreatePackage(p.PkgPath)
 		pkg.Module = p.Module.Path
@@ -258,17 +270,22 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 		}
 
 		newPackages := make([]*packages.Package, 0, len(p.Imports))
-		for i, iPkg := range p.Imports {
-			if _, ok := KnownImports[i]; ok {
+		for importName, importedPkg := range p.Imports {
+			if _, ok := KnownImports[importName]; ok {
 				continue
 			}
-			if strings.HasPrefix(i, "vendor/") {
+			if strings.HasPrefix(importName, "vendor/") {
 				continue
 			}
-			newPkg, created := r.getOrCreatePackage(i)
-			pkg.Imports = append(pkg.Imports, newPkg)
+			newPkg, created := r.getOrCreatePackage(importName)
+			m := r.getModule(p.Module.Path)
+			m.Version = p.Module.Version
+
+			if importedPkg.Module.Path != p.Module.Path {
+				pkg.Imports = append(pkg.Imports, newPkg)
+			}
 			if created {
-				newPackages = append(newPackages, iPkg)
+				newPackages = append(newPackages, importedPkg)
 			}
 		}
 		r.resolve(newPackages)
