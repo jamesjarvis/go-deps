@@ -7,47 +7,44 @@ import (
 )
 
 func TestDependsOn(t *testing.T) {
-	r := newResolver("")
-
-	p1, _ := r.getOrCreatePackage("m1/p1")
-	p2, _ := r.getOrCreatePackage("m2/p2")
-	p3, _ := r.getOrCreatePackage("m3/p3")
-	p4, _ := r.getOrCreatePackage("m4/p4")
-	p5, _ := r.getOrCreatePackage("m4/p5")
+	r := newResolver(".")
 
 	// Package structure:
-	// m1/p1 -> m2/p2 -> m3/p3 -> m4/p4
-	// m4/p5 -> m1/p1
+	// m1/p1 --> m2/p2 --> m3/p3 --> m4/p4
+	// m1/p1   	 <--------------	 m4/p5
 
-	p1.Module = "m1"
-	p2.Module = "m2"
-	p3.Module = "m3"
-	p4.Module = "m4"
-	p5.Module = "m4"
+	m1p1, _ := r.getOrCreatePackage("m1/p1")
+	m2p2, _ := r.getOrCreatePackage("m2/p2")
+	m3p3, _ := r.getOrCreatePackage("m3/p3")
+	m4p4, _ := r.getOrCreatePackage("m4/p4")
+	m4p5, _ := r.getOrCreatePackage("m4/p5")
 
-	p1.Imports = []*Package{p2}
-	p2.Imports = []*Package{p3}
-	p3.Imports = []*Package{p4}
-	p5.Imports = []*Package{p1} // Causes a module cycle
+	m1p1.Module = "m1"
+	m2p2.Module = "m2"
+	m3p3.Module = "m3"
+	m4p4.Module = "m4"
+	m4p5.Module = "m4"
 
-	r.addPackageToModuleGraph(map[*Package]struct{}{}, p1)
+	m1p1.Imports = []*Package{m2p2}
+	m2p2.Imports = []*Package{m3p3}
+	m3p3.Imports = []*Package{m4p4}
+	m4p5.Imports = []*Package{m1p1} // Causes a module cycle
 
-	require.True(t, r.dependsOn(map[*Package]struct{}{}, p5, r.importPaths[p5.Imports[0]], false))
+	// Add the packages to the graph
+	r.addPackageToModuleGraph(map[*Package]struct{}{}, m1p1)
+	r.addPackageToModuleGraph(map[*Package]struct{}{}, m4p5)
 
-	r.addPackageToModuleGraph(map[*Package]struct{}{}, p5)
-	_, ok := r.getModule("m4").Parts[1].Packages[p5]
-	require.True(t, ok)
+	// Check that m4/p5 has an import that depends on m4/p4 (creating a module cycle)
+	require.True(t, r.dependsOn(map[*Package]struct{}{}, m4p5.Imports[0], r.importPaths[m4p4]))
 
-	r = newResolver("")
-
-	r.addPackageToModuleGraph(map[*Package]struct{}{}, p3)
-
-	r.addPackageToModuleGraph(map[*Package]struct{}{}, p1)
-	r.addPackageToModuleGraph(map[*Package]struct{}{}, p5)
+	// Check that we resolved that by creating a new part
+	require.Len(t, r.getModule("m4").Parts, 2)
+	_, ok := r.getModule("m4").Parts[1].Packages[m4p5]
 	require.True(t, ok)
 }
 
 func TestResolvesCycle(t *testing.T) {
+	// This package structure is a simplified form of the google.golang.com/go module
 	ps := map[string][]string{
 		"google.golang.org/grpc/codes": {},
 		"google.golang.org/grpc": {},
@@ -90,6 +87,7 @@ func TestResolvesCycle(t *testing.T) {
 	module, ok := r.modules["cloud.google.com/go"]
 	require.True(t, ok)
 
+	// TODO(jpoole): Make the generated module graph deterministic so we don't have to have a complicated assertion here
 	for _, part := range module.Parts {
 		deps := map[*ModulePart] struct{}{}
 		findModuleDeps(r, part, part, deps)
@@ -100,12 +98,18 @@ func TestResolvesCycle(t *testing.T) {
 }
 
 // findModuleDeps will return all the module parts (i.e. the go_module()) rules a module part depends on
-func findModuleDeps(r *resolver, from *ModulePart, part *ModulePart, parts map[*ModulePart] struct{}) {
-	for pkg := range part.Packages {
+func findModuleDeps(r *resolver, from *ModulePart, currentPart *ModulePart, parts map[*ModulePart] struct{}) {
+	for pkg := range currentPart.Packages {
 		for _, i := range pkg.Imports {
 			mod := r.importPaths[i]
-			if mod == from {
+			// Ignore self imports
+			if mod == currentPart {
 				continue
+			}
+			// We found a cycle, return so we don't stack overflow
+			if mod == from {
+				parts[mod] = struct{}{}
+				return
 			}
 			if _, ok := parts[mod]; !ok {
 				parts[mod] = struct{}{}
