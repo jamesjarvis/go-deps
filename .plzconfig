@@ -12,3 +12,7 @@
 gotool = //third_party/go:toolchain|go
 ;goroot - ... 
 importpath = github.com/jamesjarvis/go-deps
+
+[parse]
+; We ignore the examplerepo as it is used for testing.
+blacklistdirs = examplerepo
