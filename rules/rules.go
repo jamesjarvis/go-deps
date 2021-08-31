@@ -1,10 +1,17 @@
-package resolve
+package rules
 
 import (
 	"fmt"
 	"os"
 	"strings"
+
+	resolve "github.com/jamesjarvis/go-deps/resolve/model"
 )
+
+const clearLineSequence = "\x1b[1G\x1b[2K"
+
+// TODO(jpoole, jamesjarvis): We should probably be using the bazel tools Rule structs rather than our own ones here
+
 
 // ModuleRules contains all the build rules for a given module
 type ModuleRules struct {
@@ -36,7 +43,7 @@ func ruleName(path, suffix string) string {
 	return 	strings.ReplaceAll(path, "/", ".") + suffix
 }
 
-func partName(part *ModulePart) string {
+func partName(part *resolve.ModulePart) string {
 	displayIndex := len(part.Module.Parts) - part.Index
 
 	if displayIndex > 0 {
@@ -45,10 +52,18 @@ func partName(part *ModulePart) string {
 	return ruleName(part.Module.Name, "")
 }
 
-func (r *resolver) generateModules() ([]*ModuleRules, error) {
+func toInstall(pkg *resolve.Package) string {
+	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
+	if install == "" {
+		return "."
+	}
+	return install
+}
+
+func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolve.Package]*resolve.ModulePart) ([]*ModuleRules, error) {
 	processed := 0
-	ret := make([]*ModuleRules, 0, len(r.modules))
-	for _, m := range r.modules {
+	ret := make([]*ModuleRules, 0, len(modules))
+	for _, m := range modules {
 		rules := new(ModuleRules)
 		ret = append(ret, rules)
 
@@ -59,11 +74,7 @@ func (r *resolver) generateModules() ([]*ModuleRules, error) {
 				Version: m.Version,
 			}
 		} else {
-			if m.Version == "" {
-				rules.Version = getVersion(m.Name)
-			} else {
-				rules.Version = m.Version
-			}
+			rules.Version = m.Version
 		}
 
 		for _, part := range m.Parts {
@@ -83,7 +94,7 @@ func (r *resolver) generateModules() ([]*ModuleRules, error) {
 					modRule.Installs = append(modRule.Installs, toInstall(pkg))
 				}
 				for _, i := range pkg.Imports {
-					dep := r.importPaths[i]
+					dep := importPaths[i]
 					depRuleName := partName(dep)
 					if _, ok := done[depRuleName]; ok || dep.Module == m {
 						continue
@@ -105,7 +116,7 @@ func (r *resolver) generateModules() ([]*ModuleRules, error) {
 			rules.Mods = append([]*ModuleRule{modRule}, rules.Mods...)
 		}
 		processed++
-		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(r.modules))
+		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(modules))
 	}
 	fmt.Fprintln(os.Stderr)
 	return ret, nil

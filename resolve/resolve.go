@@ -2,6 +2,8 @@ package resolve
 
 import (
 	"fmt"
+	"github.com/jamesjarvis/go-deps/resolve/model"
+	"github.com/jamesjarvis/go-deps/rules"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,60 +13,26 @@ import (
 
 const clearLineSequence = "\x1b[1G\x1b[2K"
 
-
 type resolver struct {
 	// pkgs is a map of import paths to their package
-	pkgs           map[string]*Package
-	modules        map[string]*Module
-	importPaths    map[*Package]*ModulePart
+	pkgs           map[string]*model.Package
+	modules        map[string]*model.Module
+	importPaths    map[*model.Package]*model.ModulePart
 	moduleCounts   map[string]int
 	rootModuleName string
 }
 
-// Package represents a single package in some module
-type Package struct {
-	// The full import path of this package
-	ImportPath string
-
-	// The module name this package belongs to
-	Module string
-
-	// Any other packages this package imports
-	Imports []*Package
-}
-
-
-// Module represents a module. It includes all deps so actually represents a full module graph.
-type Module struct {
-	// The module name
-	Name string
-
-	Version string
-
-	Parts []*ModulePart
-}
-
-// ModulePart essentially corresponds to a `go_module()` rule that compiles some (or all) packages from that module. In
-// most cases, there's one part per module except where we need to split it out to resolve a cycle.
-type ModulePart struct {
-	Module *Module
-	// The packages in this module
-	Packages map[*Package]struct{}
-	// The index of this module part
-	Index int
-}
-
 func newResolver(rootModuleName string) *resolver {
 	return &resolver{
-		pkgs:         map[string]*Package{},
-		modules:      map[string]*Module{},
-		importPaths:  map[*Package]*ModulePart{},
+		pkgs:         map[string]*model.Package{},
+		modules:      map[string]*model.Module{},
+		importPaths:  map[*model.Package]*model.ModulePart{},
 		moduleCounts: map[string]int{},
 		rootModuleName: rootModuleName,
 	}
 }
 
-func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
+func (r *resolver) dependsOn(done map[*model.Package]struct{}, pkg *model.Package, module *model.ModulePart) bool {
 	if _, ok := done[pkg]; ok {
 		return false
 	}
@@ -86,11 +54,11 @@ func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *M
 }
 
 // getOrCreateModulePart gets or create a module part that we can add this package to without causing a cycle
-func (r *resolver) getOrCreateModulePart(m *Module, pkg *Package) *ModulePart {
-	var validPart *ModulePart
+func (r *resolver) getOrCreateModulePart(m *model.Module, pkg *model.Package) *model.ModulePart {
+	var validPart *model.ModulePart
 	for _, part := range m.Parts {
 		valid := true
-		done := map[*Package]struct{}{}
+		done := map[*model.Package]struct{}{}
 		for _, i := range pkg.Imports {
 			// Check all the imports that leave the current part
 			if r.importPaths[i] != part {
@@ -106,8 +74,8 @@ func (r *resolver) getOrCreateModulePart(m *Module, pkg *Package) *ModulePart {
 		}
 	}
 	if validPart == nil {
-		validPart = &ModulePart{
-			Packages: map[*Package]struct{}{},
+		validPart = &model.ModulePart{
+			Packages: map[*model.Package]struct{}{},
 			Module: m,
 			Index: len(m.Parts) + 1,
 		}
@@ -116,7 +84,7 @@ func (r *resolver) getOrCreateModulePart(m *Module, pkg *Package) *ModulePart {
 	return validPart
 }
 
-func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Package) {
+func (r *resolver) addPackageToModuleGraph(done map[*model.Package]struct{}, pkg *model.Package) {
 	if _, ok := done[pkg]; ok {
 		return
 	}
@@ -143,12 +111,15 @@ func getCurrentModuleName(config *packages.Config) string {
 	if err != nil {
 		panic(fmt.Errorf("failed to get root package name: %v", err))
 	}
+	if pkgs[0].Module == nil {
+		return ""
+	}
 	return pkgs[0].Module.Path
 }
 
 func (r *resolver) addPackagesToModules() {
 	processed := 0
-	done := map[*Package]struct{}{}
+	done := map[*model.Package]struct{}{}
 	for _, pkg := range r.pkgs {
 		r.addPackageToModuleGraph(done, pkg)
 		processed++
@@ -156,17 +127,9 @@ func (r *resolver) addPackagesToModules() {
 	}
 }
 
-func toInstall(pkg *Package) string {
-	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
-	if install == "" {
-		return "."
-	}
-	return install
-}
-
 
 // ResolveGet resolves a `go get` style wildcard into a graph of packages
-func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
+func ResolveGet(getPaths []string) ([]*rules.ModuleRules, error) {
 	fmt.Fprintf(os.Stderr, "Analysing packages...")
 
 	config := &packages.Config{
@@ -184,7 +147,8 @@ func ResolveGet(getPaths []string) ([]*ModuleRules, error) {
 
 	r.resolve(pkgs)
 	r.addPackagesToModules()
-	return r.generateModules()
+	r.setVersions()
+	return rules.GenerateModules(r.modules, r.importPaths)
 }
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
@@ -206,7 +170,12 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 			newPkg, created := r.getOrCreatePackage(importName)
 			m := r.getModule(p.Module.Path)
 			m.Version = p.Module.Version
-
+			if p.Module == nil {
+				panic(fmt.Sprintf("no module for %v. Perhaps you need to go get something?", pkg.ImportPath))
+			}
+			if importedPkg.Module == nil {
+				panic(fmt.Sprintf("no module for imported package %v. Perhaps you need to go get something?", importedPkg.PkgPath))
+			}
 			if importedPkg.Module.Path != p.Module.Path {
 				pkg.Imports = append(pkg.Imports, newPkg)
 			}
@@ -219,19 +188,19 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 }
 
 // getOrCreatePackage gets an existing package or creates a new one. Returns true when a new package was creawed.
-func (r *resolver) getOrCreatePackage(path string) (*Package, bool) {
+func (r *resolver) getOrCreatePackage(path string) (*model.Package, bool) {
 	if pkg, ok := r.pkgs[path]; ok {
 		return pkg, false
 	}
-	pkg := &Package{ImportPath: path, Imports: []*Package{}}
+	pkg := &model.Package{ImportPath: path, Imports: []*model.Package{}}
 	r.pkgs[path] = pkg
 	return pkg, true
 }
 
-func (r *resolver) getModule(path string) *Module {
+func (r *resolver) getModule(path string) *model.Module {
 	m, ok := r.modules[path]
 	if !ok {
-		m = &Module{
+		m = &model.Module{
 			Name: path,
 		}
 		r.modules[path] = m
@@ -239,12 +208,34 @@ func (r *resolver) getModule(path string) *Module {
 	return m
 }
 
-func getVersion(module string) string {
-	cmd := exec.Command("go", "list", "-m", module)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		panic(fmt.Errorf("failed to get module version for %v: %v\n%v", module, err, string(out)))
+func (r *resolver) setVersions() {
+	var moduleNames []string
+	for _, m := range r.modules {
+		if m.Version != "" {
+			continue
+		}
+
+		if m.Name == r.rootModuleName {
+			continue
+		}
+		moduleNames = append(moduleNames, m.Name)
 	}
 
-	return strings.Trim(strings.Split(string(out), " ")[1], "\n")
+	cmd := exec.Command("go", append([]string{"list", "-m"}, moduleNames...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Errorf("failed to get module versions: %v\n%v", err, string(out)))
+	}
+
+	for _, moduleVersion := range strings.Split(string(out), "\n") {
+		if moduleVersion == "" {
+			continue
+		}
+
+		parts := strings.Split(moduleVersion, " ")
+		if len(parts) != 2 {
+			panic(fmt.Sprintf("invalid module version tuple: %v", moduleVersion))
+		}
+		r.modules[parts[0]].Version = parts[1]
+	}
 }
