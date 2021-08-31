@@ -30,6 +30,7 @@ type ModuleRule struct {
 	Installs []string
 	Deps []string
 	ExportedDeps []string
+	License string
 }
 
 // DownloadRule represents the `go_mod_download()` rule for a module with cyclic deps.
@@ -37,6 +38,7 @@ type DownloadRule struct {
 	Name string
 	Module string
 	Version string
+	License string
 }
 
 func ruleName(path, suffix string) string {
@@ -72,6 +74,7 @@ func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolv
 				Name:    ruleName(m.Name, "_dl"),
 				Module:  m.Name,
 				Version: m.Version,
+				License: m.Licence,
 			}
 		} else {
 			rules.Version = m.Version
@@ -82,6 +85,11 @@ func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolv
 				Name:   partName(part),
 				Module: m.Name,
 			}
+
+			if len(m.Parts) == 1 {
+				modRule.License = m.Licence
+			}
+
 
 			done := map[string]struct{}{}
 			for pkg := range part.Packages {
@@ -129,6 +137,9 @@ func (module *ModuleRules) Print() {
 		fmt.Printf("    name = \"%s\",\n", module.Download.Name)
 		fmt.Printf("    module = \"%s\",\n", module.Download.Module)
 		fmt.Printf("    version = \"%s\",\n", module.Download.Version)
+		if module.Download.License != "" {
+			fmt.Printf("    licences = [\"%s\"],\n", module.Download.License)
+		}
 		fmt.Println(")")
 		fmt.Println()
 	}
@@ -172,6 +183,10 @@ func (module *ModuleRules) Print() {
 			fmt.Printf("    exported_deps = [\n")
 			fmt.Printf(exportedDeps)
 			fmt.Printf("    ],\n")
+		}
+
+		if modRule.License != "" {
+			fmt.Printf("    licences = [\"%s\"]\n", modRule.License)
 		}
 
 		fmt.Println(")")

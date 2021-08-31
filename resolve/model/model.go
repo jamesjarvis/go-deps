@@ -19,6 +19,7 @@ type Module struct {
 	Name string
 
 	Version string
+	Licence string
 
 	Parts []*ModulePart
 }

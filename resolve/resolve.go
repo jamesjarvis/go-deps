@@ -2,11 +2,14 @@ package resolve
 
 import (
 	"fmt"
-	"github.com/jamesjarvis/go-deps/resolve/model"
-	"github.com/jamesjarvis/go-deps/rules"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/google/go-licenses/licenses"
+	"github.com/jamesjarvis/go-deps/resolve/model"
+	"github.com/jamesjarvis/go-deps/rules"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -148,6 +151,7 @@ func ResolveGet(getPaths []string) ([]*rules.ModuleRules, error) {
 	r.resolve(pkgs)
 	r.addPackagesToModules()
 	r.setVersions()
+	r.setLicence(pkgs)
 	return rules.GenerateModules(r.modules, r.importPaths)
 }
 
@@ -206,6 +210,51 @@ func (r *resolver) getModule(path string) *model.Module {
 		r.modules[path] = m
 	}
 	return m
+}
+
+func (r *resolver) setLicence(pkgs []*packages.Package) {
+	c, _ := licenses.NewClassifier(0.9)
+
+
+	done := 0 // start at 1 to ignore the root module
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		if _, ok := r.pkgs[p.PkgPath]; !ok  {
+			return
+		}
+		m := r.modules[p.Module.Path]
+		if m.Licence != "" || m.Name == r.rootModuleName {
+			return
+		}
+
+		done++
+		fmt.Fprintf(os.Stderr, "%sAdding licenses... %d of %d modules.", clearLineSequence, done, len(r.modules))
+
+
+		var pkgDir string
+		switch {
+		case len(p.GoFiles) > 0:
+			pkgDir = filepath.Dir(p.GoFiles[0])
+		case len(p.CompiledGoFiles) > 0:
+			pkgDir = filepath.Dir(p.CompiledGoFiles[0])
+		case len(p.OtherFiles) > 0:
+			pkgDir = filepath.Dir(p.OtherFiles[0])
+		default:
+			// This package is empty - nothing to do.
+			return
+		}
+
+		path, err := licenses.Find(pkgDir, c)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to find licence for %v in %v: %v\n", m.Name, pkgDir, err)
+		}
+		name, _, err := c.Identify(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to identify licence %v: %v\n", path, err)
+		}
+		m.Licence = name
+	})
+
+	fmt.Println()
 }
 
 func (r *resolver) setVersions() {
