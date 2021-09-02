@@ -10,9 +10,6 @@ import (
 
 const clearLineSequence = "\x1b[1G\x1b[2K"
 
-// TODO(jpoole, jamesjarvis): We should probably be using the bazel tools Rule structs rather than our own ones here
-
-
 // ModuleRules contains all the build rules for a given module
 type ModuleRules struct {
 	// Download represents the `download = ""` param for this module if any
@@ -54,6 +51,10 @@ func partName(part *resolve.ModulePart) string {
 	return ruleName(part.Module.Name, "")
 }
 
+func downloadRuleName(module *resolve.Module) string {
+	return ruleName(module.Name, "_dl")
+}
+
 func toInstall(pkg *resolve.Package) string {
 	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
 	if install == "" {
@@ -62,10 +63,10 @@ func toInstall(pkg *resolve.Package) string {
 	return install
 }
 
-func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolve.Package]*resolve.ModulePart) ([]*ModuleRules, error) {
+func (graph *BuildGraph) GenerateModules() ([]*ModuleRules, error) {
 	processed := 0
-	ret := make([]*ModuleRules, 0, len(modules))
-	for _, m := range modules {
+	ret := make([]*ModuleRules, 0, len(graph.Modules.Mods))
+	for _, m := range graph.Modules.Mods {
 		rules := new(ModuleRules)
 		ret = append(ret, rules)
 
@@ -102,7 +103,7 @@ func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolv
 					modRule.Installs = append(modRule.Installs, toInstall(pkg))
 				}
 				for _, i := range pkg.Imports {
-					dep := importPaths[i]
+					dep := graph.Modules.ImportPaths[i]
 					depRuleName := partName(dep)
 					if _, ok := done[depRuleName]; ok || dep.Module == m {
 						continue
@@ -124,7 +125,7 @@ func GenerateModules(modules map[string]*resolve.Module, importPaths map[*resolv
 			rules.Mods = append([]*ModuleRule{modRule}, rules.Mods...)
 		}
 		processed++
-		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(modules))
+		fmt.Fprintf(os.Stderr, "%sGenerating rules... %d of %d modules.", clearLineSequence, processed, len(graph.Modules.Mods))
 	}
 	fmt.Fprintln(os.Stderr)
 	return ret, nil
@@ -169,7 +170,7 @@ func (module *ModuleRules) Print() {
 		} else {
 			fmt.Printf("    version = \"%s\",\n", module.Version)
 		}
-		if len(modRule.Installs) != 1 || modRule.Installs[0] != "." {
+		if len(modRule.Installs) >= 1 || (len(modRule.Installs) == 1 && modRule.Installs[0] != ".") {
 			fmt.Printf("    install = [\n")
 			fmt.Printf(install)
 			fmt.Printf("    ],\n")

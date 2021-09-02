@@ -1,6 +1,7 @@
 package resolve
 
 import (
+	. "github.com/jamesjarvis/go-deps/resolve/model"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
@@ -13,11 +14,11 @@ func TestDependsOn(t *testing.T) {
 	// m1/p1 --> m2/p2 --> m3/p3 --> m4/p4
 	// m1/p1   	 <--------------	 m4/p5
 
-	m1p1, _ := r.getOrCreatePackage("m1/p1")
-	m2p2, _ := r.getOrCreatePackage("m2/p2")
-	m3p3, _ := r.getOrCreatePackage("m3/p3")
-	m4p4, _ := r.getOrCreatePackage("m4/p4")
-	m4p5, _ := r.getOrCreatePackage("m4/p5")
+	m1p1, _ := r.GetOrCreatePackage("m1/p1")
+	m2p2, _ := r.GetOrCreatePackage("m2/p2")
+	m3p3, _ := r.GetOrCreatePackage("m3/p3")
+	m4p4, _ := r.GetOrCreatePackage("m4/p4")
+	m4p5, _ := r.GetOrCreatePackage("m4/p5")
 
 	m1p1.Module = "m1"
 	m2p2.Module = "m2"
@@ -35,7 +36,7 @@ func TestDependsOn(t *testing.T) {
 	r.addPackageToModuleGraph(map[*Package]struct{}{}, m4p5)
 
 	// Check that m4/p5 has an import that depends on m4/p4 (creating a module cycle)
-	require.True(t, r.dependsOn(map[*Package]struct{}{}, m4p5.Imports[0], r.importPaths[m4p4]))
+	require.True(t, r.dependsOn(map[*Package]struct{}{}, m4p5.Imports[0], r.ImportPaths[m4p4]))
 
 	// Check that we resolved that by creating a new part
 	require.Len(t, r.getModule("m4").Parts, 2)
@@ -73,10 +74,10 @@ func TestResolvesCycle(t *testing.T) {
 	}
 
 	for importPath, imports := range ps {
-		pkg, _ := r.getOrCreatePackage(importPath)
+		pkg, _ := r.GetOrCreatePackage(importPath)
 		pkg.Module = getModuleNameFor(importPath)
 		for _, i := range imports {
-			importedPackage, _ := r.getOrCreatePackage(i)
+			importedPackage, _ := r.GetOrCreatePackage(i)
 			pkg.Imports = append(pkg.Imports, importedPackage)
 		}
 	}
@@ -84,7 +85,7 @@ func TestResolvesCycle(t *testing.T) {
 	r.addPackagesToModules()
 
 	// Check we don't have a cycle
-	module, ok := r.modules["cloud.google.com/go"]
+	module, ok := r.Mods["cloud.google.com/go"]
 	require.True(t, ok)
 
 	// TODO(jpoole): Make the generated module graph deterministic so we don't have to have a complicated assertion here
@@ -101,7 +102,7 @@ func TestResolvesCycle(t *testing.T) {
 func findModuleDeps(r *resolver, from *ModulePart, currentPart *ModulePart, parts map[*ModulePart] struct{}) {
 	for pkg := range currentPart.Packages {
 		for _, i := range pkg.Imports {
-			mod := r.importPaths[i]
+			mod := r.ImportPaths[i]
 			// Ignore self imports
 			if mod == currentPart {
 				continue

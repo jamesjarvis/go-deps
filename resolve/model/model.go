@@ -10,6 +10,8 @@ type Package struct {
 
 	// Any other packages this package imports
 	Imports []*Package
+
+	Resolved bool
 }
 
 
@@ -32,4 +34,6 @@ type ModulePart struct {
 	Packages map[*Package]struct{}
 	// The index of this module part
 	Index int
+
+	Modified bool
 }
