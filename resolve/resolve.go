@@ -2,18 +2,16 @@ package resolve
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/go-licenses/licenses"
+	"github.com/jamesjarvis/go-deps/progress"
 	. "github.com/jamesjarvis/go-deps/resolve/model"
 
 	"golang.org/x/tools/go/packages"
 )
-
-const clearLineSequence = "\x1b[1G\x1b[2K"
 
 type Modules struct {
 	Pkgs        map[string]*Package
@@ -25,9 +23,10 @@ type resolver struct {
 	*Modules
 	moduleCounts   map[string]int
 	rootModuleName string
+	config *packages.Config
 }
 
-func newResolver(rootModuleName string) *resolver {
+func newResolver(rootModuleName string, config *packages.Config) *resolver {
 	return &resolver{
 		Modules: &Modules{
 			Pkgs:        map[string]*Package{},
@@ -36,6 +35,7 @@ func newResolver(rootModuleName string) *resolver {
 		},
 		moduleCounts: map[string]int{},
 		rootModuleName: rootModuleName,
+		config: config,
 	}
 }
 
@@ -133,28 +133,19 @@ func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
 	for _, pkg := range r.Pkgs {
 		r.addPackageToModuleGraph(done, pkg)
 		processed++
-		fmt.Fprintf(os.Stderr, "%sBuilding module graph... %d of %d packages.", clearLineSequence, processed, len(r.Pkgs))
+		progress.PrintUpdate("Building module graph... %d of %d packages.", processed, len(r.Pkgs))
 	}
 }
 
 // UpdateModules resolves a `go get` style wildcard and updates the modules passed in to it
 func UpdateModules(modules *Modules, getPaths []string) error {
-	fmt.Fprintf(os.Stderr, "Analysing packages...")
-
-	config := &packages.Config{
-		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
-	}
-	r := newResolver(getCurrentModuleName(config))
-	if modules != nil {
-		r.Modules = modules
-	}
-
-	pkgs, err := packages.Load(config, getPaths...)
+	defer progress.Clear()
+	pkgs, r, err := load(getPaths)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, " Done.\n")
+	r.Modules = modules
 
 	done := map[*Package]struct{}{}
 	if modules != nil {
@@ -166,16 +157,39 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 
 	r.resolve(pkgs)
 	r.addPackagesToModules(done)
-	if err := r.resolveModifiedPackages(config); err != nil {
+
+	if err := r.resolveModifiedPackages(); err != nil {
 		return err
 	}
-	r.setVersions()
-	r.setLicence(pkgs)
+
+	if err := r.setVersions(); err != nil {
+		return err
+	}
+
+	if err := r.setLicence(pkgs); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func (r *resolver) resolveModifiedPackages(config *packages.Config) error {
+func load(getPaths []string) ([]*packages.Package, *resolver, error) {
+	progress.PrintUpdate( "Analysing packages...")
+
+	config := &packages.Config{
+		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
+	}
+	r := newResolver(getCurrentModuleName(config), config)
+
+	pkgs, err := packages.Load(config, getPaths...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return pkgs, r, nil
+}
+
+func (r *resolver) resolveModifiedPackages() error {
 	var modifiedPackages []string
 	for _, m := range r.Mods {
 		for _, part := range m.Parts {
@@ -189,7 +203,7 @@ func (r *resolver) resolveModifiedPackages(config *packages.Config) error {
 		}
 	}
 
-	pkgs, err := packages.Load(config, modifiedPackages...)
+	pkgs, err := packages.Load(r.config, modifiedPackages...)
 	if err != nil {
 		return err
 	}
@@ -235,7 +249,7 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 	}
 }
 
-// GetOrCreatePackage gets an existing package or creates a new one. Returns true when a new package was creawed.
+// GetPackage gets an existing package or creates a new one
 func (mods *Modules) GetPackage(path string) *Package {
 	if pkg, ok := mods.Pkgs[path]; ok {
 		return pkg
@@ -256,12 +270,14 @@ func (mods *Modules) GetModule(path string) *Module {
 	return m
 }
 
-func (r *resolver) setLicence(pkgs []*packages.Package) {
+func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 	c, _ := licenses.NewClassifier(0.9)
-
 
 	done := 0 // start at 1 to ignore the root module
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		if err != nil {
+			return
+		}
 		if _, ok := r.Pkgs[p.PkgPath]; !ok  {
 			return
 		}
@@ -271,7 +287,7 @@ func (r *resolver) setLicence(pkgs []*packages.Package) {
 		}
 
 		done++
-		fmt.Fprintf(os.Stderr, "%sAdding licenses... %d of %d modules.", clearLineSequence, done, len(r.Mods))
+		progress.PrintUpdate("Adding licenses... %d of %d modules.", done, len(r.Mods))
 
 
 		var pkgDir string
@@ -287,21 +303,22 @@ func (r *resolver) setLicence(pkgs []*packages.Package) {
 			return
 		}
 
-		path, err := licenses.Find(pkgDir, c)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: failed to find licence for %v in %v: %v\n", m.Name, pkgDir, err)
+		path, e := licenses.Find(pkgDir, c)
+		if e != nil {
+			err = fmt.Errorf("failed to find licence for %v in %v: %v", m.Name, pkgDir, err)
+			return
 		}
-		name, _, err := c.Identify(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: failed to identify licence %v: %v\n", path, err)
+		name, _, e := c.Identify(path)
+		if e != nil {
+			err = fmt.Errorf("failed to identify licence %v: %v", path, err)
+			return
 		}
 		m.Licence = name
 	})
-
-	fmt.Println()
+	return
 }
 
-func (r *resolver) setVersions() {
+func (r *resolver) setVersions() error {
 	var moduleNames []string
 	for _, m := range r.Mods {
 		if m.Version != "" {
@@ -320,10 +337,13 @@ func (r *resolver) setVersions() {
 		panic(fmt.Errorf("failed to get module versions: %v\n%v", err, string(out)))
 	}
 
-	for _, moduleVersion := range strings.Split(string(out), "\n") {
+	vs := strings.Split(string(out), "\n")
+	for i, moduleVersion := range vs {
 		if moduleVersion == "" {
 			continue
 		}
+
+		progress.PrintUpdate("Setting versions... %d of %d modules.", i+1, len(vs))
 
 		parts := strings.Split(moduleVersion, " ")
 		if len(parts) != 2 {
@@ -331,4 +351,6 @@ func (r *resolver) setVersions() {
 		}
 		r.Mods[parts[0]].Version = parts[1]
 	}
+
+	return nil
 }

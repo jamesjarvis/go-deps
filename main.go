@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	moduleFlag = "module"
+	moduleFlag  = "module"
 	versionFlag = "version"
 )
 
@@ -23,9 +23,9 @@ func main() {
 		Usage: "Add a Go Module to an existing Please Monorepo",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    moduleFlag,
-				Aliases: []string{"m"},
-				Usage:   "Module to add",
+				Name:     moduleFlag,
+				Aliases:  []string{"m"},
+				Usage:    "Module to add",
 				Required: true,
 			},
 			&cli.StringFlag{
@@ -47,7 +47,7 @@ func main() {
 			}
 
 			m := &module.Module{
-				Path: c.String(moduleFlag),
+				Path:    c.String(moduleFlag),
 				Version: c.String(versionFlag),
 			}
 
