@@ -8,6 +8,7 @@ import (
 
 	"github.com/jamesjarvis/go-deps/host"
 	"github.com/jamesjarvis/go-deps/module"
+
 	"github.com/urfave/cli/v2"
 )
 
