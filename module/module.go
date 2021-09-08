@@ -16,32 +16,34 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+var SingleFileBuild = false
+
 const goModuleTemplateString = `
 go_module(
-  name = "{{ .GetName }}",
-  module = "{{ .Path }}",
-  version = "{{ .Version }}",
-  deps = [
-    {{- range .Deps }}
-    "{{ .GetFullyQualifiedName }}",
-    {{- end }}
-  ],
-  visibility = ["PUBLIC"],
-  install = ["..."],
+    name = "{{ .GetName }}",
+    module = "{{ .Path }}",
+    version = "{{ .Version }}",
+    deps = [
+        {{- range .Deps }}
+        "{{ .GetFullyQualifiedName }}",
+        {{- end }}
+    ],
+    visibility = ["PUBLIC"],
+    install = ["..."],
 )
 `
 
 const goModuleDownloadTemplateString = `
 go_mod_download(
-  name = "{{ .GetDownloadName }}",
-  module = "{{ .Path }}",
-  version = "{{ .Version }}",
-  deps = [
-    {{- range .Deps }}
-    "{{ .GetFullyQualifiedName }}",
-    {{- end }}
-  ],
-  visibility = ["PUBLIC"],
+    name = "{{ .GetDownloadName }}",
+    module = "{{ .Path }}",
+    version = "{{ .Version }}",
+    deps = [
+        {{- range .Deps }}
+        "{{ .GetFullyQualifiedName }}",
+        {{- end }}
+    ],
+    visibility = ["PUBLIC"],
 )
 
 go_module(
@@ -74,6 +76,7 @@ type Module struct {
 	dir string
 	sum string
 	goModSum string
+	nameWithHost bool
 }
 
 // String returns a string representation of the module, with the module name and version.
@@ -90,6 +93,7 @@ func (m *Module) GetName() string {
 	if m.Name != "" {
 		return m.Name
 	}
+
 	splitPath := strings.Split(m.Path, "/")
 	modName := splitPath[len(splitPath)-1]
 	if splitPath[0] == "github.com" {
@@ -97,6 +101,9 @@ func (m *Module) GetName() string {
 	}
 	if m.nameWithVersion {
 		return modName + "_" + semver.Major(m.Version)
+	}
+	if m.nameWithHost {
+		return strings.ReplaceAll(m.Path, "/", "-")
 	}
 	return modName
 }
@@ -108,37 +115,53 @@ func (m *Module) GetDownloadName() string {
 
 // GetBuildPath returns the path to the please BUILD file where this module is defined.
 func (m *Module) GetBuildPath() string {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	if SingleFileBuild {
+		return fmt.Sprintf("%s/third_party/go/BUILD", currentDir)
+	}
 	splitPath := strings.Split(m.Path, "/")
 	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
 	if splitPath[0] == "github.com" {
 		pathMinusEnd = strings.Join(splitPath[:2], "/")
 	}
-	currentDir, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
+
 	return fmt.Sprintf("%s/third_party/go/%s/BUILD", currentDir, pathMinusEnd)
 }
 
 // GetFullyQualifiedName returns the please build target for this module.
 func (m *Module) GetFullyQualifiedName() string {
-	splitPath := strings.Split(m.Path, "/")
-	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
-	if splitPath[0] == "github.com" {
-		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	buildDir := ""
+	if !SingleFileBuild {
+		splitPath := strings.Split(m.Path, "/")
+		pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+		if splitPath[0] == "github.com" {
+			pathMinusEnd = strings.Join(splitPath[:2], "/")
+		}
+		buildDir = fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	} else {
+		buildDir = "third_party/go"
 	}
-	buildDir := fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+
 	return "//" + buildDir + ":" + m.GetName()
 }
 
 // GetFullyQualifiedDownloadName returns the please build target for this module's go_mod_download rule.
 func (m *Module) GetFullyQualifiedDownloadName() string {
-	splitPath := strings.Split(m.Path, "/")
-	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
-	if splitPath[0] == "github.com" {
-		pathMinusEnd = strings.Join(splitPath[:2], "/")
+	buildDir := ""
+	if !SingleFileBuild {
+		splitPath := strings.Split(m.Path, "/")
+		pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
+		if splitPath[0] == "github.com" {
+			pathMinusEnd = strings.Join(splitPath[:2], "/")
+		}
+		buildDir = fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+	} else {
+		buildDir = "third_party/go"
 	}
-	buildDir := fmt.Sprintf("third_party/go/%s", pathMinusEnd)
+
 	return "//" + buildDir + ":" + m.GetDownloadName()
 }
 

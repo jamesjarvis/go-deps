@@ -14,6 +14,7 @@ import (
 const (
 	moduleFlag = "module"
 	versionFlag = "version"
+	singleFileFlag = "single_file"
 )
 
 // This binary will accept a module name and optionally a semver or commit hash, and will add this module to a BUILD file.
@@ -33,6 +34,12 @@ func main() {
 				Aliases: []string{"v"},
 				Usage:   "Version of the module to add",
 			},
+			&cli.BoolFlag{
+				Name:    singleFileFlag,
+				Aliases: []string{"s"},
+				Usage:   "Whether to export to single BUILD file",
+				Value: false,
+			},
 		},
 		Action: func(c *cli.Context) error {
 			ctx := context.TODO()
@@ -45,6 +52,8 @@ func main() {
 			if !alreadyExists {
 				defer host.TearDownGoMod(ctx)
 			}
+
+			module.SingleFileBuild = c.Bool(singleFileFlag)
 
 			m := &module.Module{
 				Path: c.String(moduleFlag),
