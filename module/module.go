@@ -20,30 +20,30 @@ var SingleFileBuild = false
 
 const goModuleTemplateString = `
 go_module(
-  name = "{{ .GetName }}",
-  module = "{{ .Path }}",
-  version = "{{ .Version }}",
-  deps = [
-    {{- range .Deps }}
-    "{{ .GetFullyQualifiedName }}",
-    {{- end }}
-  ],
-  visibility = ["PUBLIC"],
-  install = ["..."],
+    name = "{{ .GetName }}",
+    module = "{{ .Path }}",
+    version = "{{ .Version }}",
+    deps = [
+        {{- range .Deps }}
+        "{{ .GetFullyQualifiedName }}",
+        {{- end }}
+    ],
+    visibility = ["PUBLIC"],
+    install = ["..."],
 )
 `
 
 const goModuleDownloadTemplateString = `
 go_mod_download(
-  name = "{{ .GetDownloadName }}",
-  module = "{{ .Path }}",
-  version = "{{ .Version }}",
-  deps = [
-    {{- range .Deps }}
-    "{{ .GetFullyQualifiedName }}",
-    {{- end }}
-  ],
-  visibility = ["PUBLIC"],
+    name = "{{ .GetDownloadName }}",
+    module = "{{ .Path }}",
+    version = "{{ .Version }}",
+    deps = [
+        {{- range .Deps }}
+        "{{ .GetFullyQualifiedName }}",
+        {{- end }}
+    ],
+    visibility = ["PUBLIC"],
 )
 
 go_module(

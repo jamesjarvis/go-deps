@@ -1,9 +1,8 @@
+
 go_module(
     name = "grpc-gateway",
-    install = ["..."],
     module = "github.com/grpc-ecosystem/grpc-gateway",
     version = "v1.16.0",
-    visibility = ["PUBLIC"],
     deps = [
         "//third_party/go/github.com/antihax:optional",
         "//third_party/go/github.com/ghodss:yaml",
@@ -14,4 +13,6 @@ go_module(
         "//third_party/go/google.golang.org:genproto",
         "//third_party/go/google.golang.org:grpc",
     ],
+    visibility = ["PUBLIC"],
+    install = ["..."],
 )
