@@ -78,7 +78,7 @@ func (d *Directory) Print() {
 	}
 }
 
-func (d *Directory) ExportBuildRules() error {
+func (d *Directory) ExportBuildRules(thirdParty string) error {
 	// Delete all existing third party build files.
 	err := host.RemoveAllThirdPartyFiles()
 	if err != nil {
@@ -100,7 +100,7 @@ func (d *Directory) ExportBuildRules() error {
 		sort.Strings(versions)
 		for _, version := range versions {
 			mod := vd.versions[version]
-			buildFilePath := mod.GetBuildPath()
+			buildFilePath := mod.GetBuildPath(thirdParty)
 			if _, err := os.Stat(buildFilePath); os.IsNotExist(err) { 
 				err = os.MkdirAll(strings.TrimSuffix(buildFilePath, "/BUILD"), 0700) // Create the nested directory
 				if err != nil {
