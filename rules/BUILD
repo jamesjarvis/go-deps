@@ -4,10 +4,10 @@ go_library(
         "format.go",
         "read.go",
     ],
-    visibility = ["//resolve/..."],
+    visibility = ["PUBLIC"],
     deps = [
         "//resolve",
         "//resolve/model",
-        "//third_party/go:github.com.bazelbuild.buildtools",
+        "//third_party/go:buildtools",
     ],
 )

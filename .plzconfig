@@ -1,16 +1,8 @@
-; Please config file
-; Leaving this file as is is enough to use plz to build your project.
-; Please will stay on whatever version you currently have until you run
-; 'plz update', when it will download the latest available version.
-;
-; Or you can uncomment the following to pin everyone to a particular version;
-; when you change it all users will automatically get updated.
 [please]
-version = 16.7.0
+version = 16.8.0
 
 [go]
 gotool = //third_party/go:toolchain|go
-;goroot - ... 
 importpath = github.com/jamesjarvis/go-deps
 
 [parse]
