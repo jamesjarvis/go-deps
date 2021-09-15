@@ -222,7 +222,7 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
 				pkg.Module = r.rootModuleName
 			} else {
-				panic(fmt.Errorf("no module for %v", p.PkgPath))
+				panic(fmt.Errorf("no module found for pkg %v", p.PkgPath))
 			}
 		} else {
 			pkg.Module = p.Module.Path
@@ -291,7 +291,7 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
 				m = r.Mods[r.rootModuleName]
 			} else {
-				err = fmt.Errorf("no module foudn for pkg %v", p.PkgPath)
+				err = fmt.Errorf("no module found for pkg %v", p.PkgPath)
 				return
 			}
 		} else {
