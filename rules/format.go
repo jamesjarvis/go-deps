@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	resolve "github.com/jamesjarvis/go-deps/resolve/model"
@@ -10,22 +12,48 @@ import (
 	"github.com/bazelbuild/buildtools/edit"
 )
 
+var semverRegex = regexp.MustCompile("^v[0-9]+$")
 
-func ruleName(path, suffix string) string {
-	return 	strings.ReplaceAll(path, "/", ".") + suffix
+func split(path string) (string, string) {
+	dir, base := filepath.Split(path)
+	return filepath.Clean(dir), base
 }
 
-func partName(part *resolve.ModulePart) string {
-	displayIndex := len(part.Module.Parts) - part.Index
-
-	if displayIndex > 0 {
-		return ruleName(part.Module.Name, fmt.Sprintf("_%d", displayIndex))
+func (file *BuildFile) assignName(originalPath, suffix string) string {
+	path, base := split(originalPath)
+	name := base + suffix
+	if semverRegex.MatchString(name) {
+		path, base = split(path)
+		name = base + "." + name
 	}
-	return ruleName(part.Module.Name, "")
+
+	for {
+		extantPath, ok := file.usedNames[name]
+		if !ok {
+			break
+		}
+		if extantPath == originalPath {
+			return name
+		}
+		path, base = split(path)
+		name = base + "." + name
+	}
+	file.usedNames[name] = originalPath
+	return name
 }
 
-func downloadRuleName(module *resolve.Module) string {
-	return ruleName(module.Name, "_dl")
+func (file *BuildFile) partName(part *resolve.ModulePart) string {
+	displayIndex := len(part.Module.Parts) - part.Index
+	suffix := ""
+	if displayIndex > 0 {
+		suffix = fmt.Sprintf("_%d", displayIndex)
+	}
+	return file.assignName(part.Module.Name, suffix)
+
+}
+
+func (file *BuildFile) downloadRuleName(module *resolve.Module) string {
+	return file.assignName(module.Name, "_dl")
 }
 
 func toInstall(pkg *resolve.Package) string {
@@ -36,27 +64,58 @@ func toInstall(pkg *resolve.Package) string {
 	return install
 }
 
-func (graph *BuildGraph) Save() error {
-	for _, m := range graph.Modules.Mods {
-		dlRule, ok := graph.ModDownloadRules[m]
+func (g *BuildGraph) file(mod *resolve.Module, structured bool, thirdPartyFolder string) (*BuildFile, error) {
+	path := ""
+	if structured {
+		path = filepath.Join(thirdPartyFolder, mod.Name, "BUILD")
+	} else {
+		path = filepath.Join(thirdPartyFolder, "BUILD")
+	}
+
+	if f, ok := g.Files[path]; ok {
+		g.ModFiles[mod] = f
+		return f, nil
+	} else {
+		// TODO create the build file
+		file, err := newFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		g.ModFiles[mod] = file
+		g.Files[path] = file
+
+		return file, nil
+	}
+}
+
+func (g *BuildGraph) Save(structured bool, thirdPartyFolder string) error {
+	for _, m := range g.Modules.Mods {
+		file, err := g.file(m, structured, thirdPartyFolder)
+		if err != nil {
+			return err
+		}
+		dlRule, ok := file.ModDownloadRules[m]
 		if len(m.Parts) > 1 {
 			if !ok {
-				dlRule = NewRule(graph.File, "go_mod_download", downloadRuleName(m))
+				dlRule = NewRule(file.File, "go_mod_download", file.downloadRuleName(m))
+				file.ModDownloadRules[m] = dlRule
 			}
 			dlRule.SetAttr("version", NewStringExpr(m.Version))
 			dlRule.SetAttr("module", NewStringExpr(m.Name))
 			dlRule.SetAttr("licences", NewStringList(m.Licence))
 		} else if ok {
-			graph.File.DelRules(dlRule.Kind(), dlRule.Name())
+			file.File.DelRules(dlRule.Kind(), dlRule.Name())
 		}
 
 		for _, part := range m.Parts {
 			if !part.Modified {
 				continue
 			}
-			modRule, ok := graph.ModRules[part]
+			modRule, ok := file.ModRules[part]
 			if !ok {
-				modRule = NewRule(graph.File, "go_module", partName(part))
+				modRule = NewRule(file.File, "go_module", file.partName(part))
+				file.ModRules[part] = modRule
 			}
 			modRule.DelAttr("version")
 			modRule.DelAttr("download")
@@ -67,7 +126,7 @@ func (graph *BuildGraph) Save() error {
 			modRule.SetAttr("module", NewStringExpr(m.Name))
 
 			if len(m.Parts) > 1 {
-				modRule.SetAttr("download", NewStringExpr(":" + downloadRuleName(m)))
+				modRule.SetAttr("download", NewStringExpr(":" + file.downloadRuleName(m)))
 			} else {
 				modRule.SetAttr("licences", NewStringList(m.Licence))
 				modRule.SetAttr("version", NewStringExpr(m.Version))
@@ -82,23 +141,22 @@ func (graph *BuildGraph) Save() error {
 				installs = append(installs, toInstall(pkg))
 
 				for _, i := range pkg.Imports {
-					dep := graph.Modules.ImportPaths[i]
-					depRuleName := partName(dep)
+					dep := g.Modules.ImportPaths[i]
+					depRuleName := file.partName(dep)
 					if _, ok := doneDeps[depRuleName]; ok || dep.Module == m {
 						continue
 					}
 					doneDeps[depRuleName] = struct{}{}
-					deps = append(deps, ":" + depRuleName)
+					deps = append(deps, ":"+depRuleName)
 				}
 			}
 
 			// The last part is the namesake and should export the rest of the parts.
 			if part.Index == len(m.Parts) {
-				for _, part := range m.Parts[:(len(m.Parts)-1)] {
-					exportedDeps = append(exportedDeps, ":" + partName(part))
+				for _, part := range m.Parts[:(len(m.Parts) - 1)] {
+					exportedDeps = append(exportedDeps, ":" + file.partName(part))
 				}
 			}
-
 
 			if len(installs) > 1 || (len(installs) == 1 && installs[0] != ".") {
 				modRule.SetAttr("install", NewStringList(installs...))
@@ -114,7 +172,11 @@ func (graph *BuildGraph) Save() error {
 
 		}
 	}
-	fmt.Println(string(build.Format(graph.File)))
+
+	for path, f := range g.Files {
+		fmt.Println("# " + path)
+		fmt.Println(string(build.Format(f.File)))
+	}
 	return nil
 }
 

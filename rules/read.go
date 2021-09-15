@@ -11,44 +11,70 @@ import (
 )
 
 type BuildGraph struct {
-	File *build.File
 	Modules *resolve.Modules
-	ModRules map[*model.ModulePart]*build.Rule
-	ModDownloadRules map[*model.Module]*build.Rule
+
+	ModFiles map[*model.Module]*BuildFile
+	Files map[string]*BuildFile
 }
 
-func ReadRules(buildFile string) (*BuildGraph, error) {
-	data, err := os.ReadFile(buildFile)
-	if err != nil {
-		return nil, err
-	}
-	f, err := build.ParseBuild(buildFile, data)
-	if err != nil {
-		return nil, err
-	}
+type BuildFile struct {
+	File *build.File
+	ModRules map[*model.ModulePart]*build.Rule
+	ModDownloadRules map[*model.Module]*build.Rule
 
-	ret := &BuildGraph {
-		File: f,
+	usedNames map[string]string
+}
+
+func NewGraph() *BuildGraph {
+	return &BuildGraph{
 		Modules: &resolve.Modules{
-			Pkgs:        map[string]*model.Package{},
-			Mods:        map[string]*model.Module{},
+			Pkgs: map[string]*model.Package{},
+			Mods: map[string]*model.Module{},
 			ImportPaths: map[*model.Package]*model.ModulePart{},
 		},
+		ModFiles: map[*model.Module]*BuildFile{},
+		Files: map[string]*BuildFile{},
+	}
+}
+
+func newFile(path string) (*BuildFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	f, err := build.ParseBuild(path, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BuildFile{
+		File: f,
 		ModRules: map[*model.ModulePart]*build.Rule{},
 		ModDownloadRules: map[*model.Module]*build.Rule{},
-	}
-	for _, rule := range f.Rules("go_module") {
-		moduleName := rule.AttrString("module")
-		module := ret.Modules.GetModule(moduleName)
+		usedNames: map[string]string{},
+	}, nil
+}
 
+func (g *BuildGraph) ReadRules(buildFile string) error {
+	file, err := newFile(buildFile)
+	if err != nil {
+		return err
+	}
+
+	g.Files[buildFile] = file
+
+	for _, rule := range file.File.Rules("go_module") {
+		moduleName := rule.AttrString("module")
+		module := g.Modules.GetModule(moduleName)
+		g.ModFiles[module] = file
 
 		pkgs := map[*model.Package]struct{}{}
 		part := &model.ModulePart{
-			Module:   ret.Modules.GetModule(moduleName),
+			Module:   g.Modules.GetModule(moduleName),
 			Packages: pkgs,
 			Index:    len(module.Parts)+1,
 		}
-		ret.ModRules[part] = rule
+		file.ModRules[part] = rule
 
 		install := getStrListList(rule, "install")
 		if len(install) == 0 {
@@ -56,20 +82,21 @@ func ReadRules(buildFile string) (*BuildGraph, error) {
 		}
 		for _, i := range install {
 			importPath := filepath.Join(moduleName, i)
-			pkg := ret.Modules.GetPackage(importPath)
+			pkg := g.Modules.GetPackage(importPath)
 			pkg.Module = moduleName
 			pkgs[pkg] = struct{}{}
-			ret.Modules.ImportPaths[pkg] = part
+			g.Modules.ImportPaths[pkg] = part
 		}
 
 		module.Parts = append(module.Parts, part)
 	}
 
-	for _, rule := range f.Rules("go_mod_download") {
+	for _, rule := range file.File.Rules("go_mod_download") {
 		moduleName := rule.AttrString("module")
-		ret.ModDownloadRules[ret.Modules.GetModule(moduleName)] = rule
+		file.ModDownloadRules[g.Modules.GetModule(moduleName)] = rule
 	}
-	return ret, nil
+
+	return nil
 }
 
 

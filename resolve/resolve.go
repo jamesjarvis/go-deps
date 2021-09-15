@@ -330,6 +330,9 @@ func (r *resolver) setVersions() error {
 		}
 		moduleNames = append(moduleNames, m.Name)
 	}
+	if len(moduleNames) == 0 {
+		return nil
+	}
 
 	cmd := exec.Command("go", append([]string{"list", "-m"}, moduleNames...)...)
 	out, err := cmd.CombinedOutput()
