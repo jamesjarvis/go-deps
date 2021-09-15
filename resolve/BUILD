@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//progress",
         "//resolve/model",
-        "//third_party/go:go-licenses",
-        "//third_party/go:tools",
+        "//third_party/go/github.com/google/go-licenses",
+        "//third_party/go/golang.org/x/tools",
     ],
 )

@@ -38,10 +38,8 @@ func NewGraph() *BuildGraph {
 }
 
 func newFile(path string) (*BuildFile, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+	// Ignore errors here as the file doesn't have to exist
+	data, _ := os.ReadFile(path)
 	f, err := build.ParseBuild(path, data)
 	if err != nil {
 		return nil, err

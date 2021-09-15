@@ -4,6 +4,6 @@ go_binary(
     deps = [
         "//resolve",
         "//rules",
-        "//third_party/go:cli.v2",
+        "//third_party/go/github.com/urfave/cli/v2",
     ],
 )

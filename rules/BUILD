@@ -8,6 +8,6 @@ go_library(
     deps = [
         "//resolve",
         "//resolve/model",
-        "//third_party/go:buildtools",
+        "//third_party/go/github.com/bazelbuild/buildtools",
     ],
 )

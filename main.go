@@ -17,7 +17,7 @@ const (
 	moduleFlag     = "module"
 	versionFlag    = "version"
 	thirdPartyFlag = "third_party"
-	updateFlag     = "update"
+	writeFlag      = "write"
 	structuredFlag = "structured"
 )
 
@@ -39,8 +39,8 @@ func main() {
 				Usage:   "The third party folder to write rules to",
 			},
 			&cli.BoolFlag{
-				Name:    updateFlag,
-				Aliases: []string{"u"},
+				Name:    writeFlag,
+				Aliases: []string{"w"},
 				Usage:   "Whether to update the BUILD file(s), or just print to stdout",
 			},
 			&cli.BoolFlag{
@@ -84,7 +84,7 @@ func main() {
 				return err
 			}
 
-			return moduleGraph.Save(ctx.Bool(structuredFlag), thirdPartyFolder)
+			return moduleGraph.Save(ctx.Bool(structuredFlag), ctx.Bool(writeFlag), thirdPartyFolder)
 		},
 	}
 
