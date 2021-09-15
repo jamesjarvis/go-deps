@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jamesjarvis/go-deps/resolve"
-	"github.com/jamesjarvis/go-deps/resolve/model"
+	"github.com/tatskaari/go-deps/resolve"
+	"github.com/tatskaari/go-deps/resolve/model"
 
 	"github.com/bazelbuild/buildtools/build"
 )

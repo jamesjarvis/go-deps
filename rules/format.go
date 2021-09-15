@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	resolve "github.com/jamesjarvis/go-deps/resolve/model"
+	resolve "github.com/tatskaari/go-deps/resolve/model"
 
 	"github.com/bazelbuild/buildtools/build"
 	"github.com/bazelbuild/buildtools/edit"

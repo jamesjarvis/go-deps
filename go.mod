@@ -1,4 +1,4 @@
-module github.com/jamesjarvis/go-deps
+module github.com/tatskaari/go-deps
 
 go 1.16
 

@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jamesjarvis/go-deps/resolve"
-	"github.com/jamesjarvis/go-deps/rules"
+	"github.com/tatskaari/go-deps/resolve"
+	"github.com/tatskaari/go-deps/rules"
 
 	"github.com/urfave/cli/v2"
 )

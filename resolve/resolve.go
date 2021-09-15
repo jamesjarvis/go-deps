@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/go-licenses/licenses"
-	"github.com/jamesjarvis/go-deps/progress"
-	. "github.com/jamesjarvis/go-deps/resolve/model"
+	"github.com/tatskaari/go-deps/progress"
+	. "github.com/tatskaari/go-deps/resolve/model"
 
 	"golang.org/x/tools/go/packages"
 )

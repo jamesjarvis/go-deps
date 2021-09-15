@@ -3,7 +3,7 @@ version = 16.8.0
 
 [go]
 gotool = //third_party/go:toolchain|go
-importpath = github.com/jamesjarvis/go-deps
+importpath = github.com/tatskaari/go-deps
 
 [parse]
 ; We ignore the examplerepo as it is used for testing.
