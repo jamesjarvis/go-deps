@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *M
 	done[pkg] = struct{}{}
 	pkgModule, ok := r.ImportPaths[pkg]
 	if !ok {
-		panic("not okay")
+		panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
 	}
 	if module == pkgModule {
 		return true
@@ -116,15 +117,14 @@ func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Pack
 	done[pkg] = struct{}{}
 }
 
-func getCurrentModuleName(config *packages.Config) string {
-	pkgs, err := packages.Load(config, ".")
+func getCurrentModuleName() string {
+	cmd := exec.Command("go", "list", "-m")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		panic(fmt.Errorf("failed to get root package name: %v", err))
-	}
-	if pkgs[0].Module == nil {
+		fmt.Fprintf(os.Stderr, "WARNING: failed to get the current modules name: %v\n", err)
 		return ""
 	}
-	return pkgs[0].Module.Path
+	return strings.TrimSpace(string(out))
 }
 
 func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
@@ -179,7 +179,7 @@ func load(getPaths []string) ([]*packages.Package, *resolver, error) {
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
 	}
-	r := newResolver(getCurrentModuleName(config), config)
+	r := newResolver(getCurrentModuleName(), config)
 
 	pkgs, err := packages.Load(config, getPaths...)
 	if err != nil {
@@ -218,9 +218,14 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 			continue
 		}
 		pkg := r.GetPackage(p.PkgPath)
-		pkg.Module = p.Module.Path
-		if pkg.Module == "" {
-			panic(fmt.Errorf("no module for %v", p.PkgPath))
+		if p.Module == nil {
+			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
+				pkg.Module = r.rootModuleName
+			} else {
+				panic(fmt.Errorf("no module found for pkg %v", p.PkgPath))
+			}
+		} else {
+			pkg.Module = p.Module.Path
 		}
 
 		newPackages := make([]*packages.Package, 0, len(p.Imports))
@@ -281,7 +286,17 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 		if _, ok := r.Pkgs[p.PkgPath]; !ok  {
 			return
 		}
-		m := r.Mods[p.Module.Path]
+		var m *Module
+		if p.Module == nil {
+			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
+				m = r.Mods[r.rootModuleName]
+			} else {
+				err = fmt.Errorf("no module found for pkg %v", p.PkgPath)
+				return
+			}
+		} else {
+			m = r.Mods[p.Module.Path]
+		}
 		if m.Licence != "" || m.Name == r.rootModuleName {
 			return
 		}
