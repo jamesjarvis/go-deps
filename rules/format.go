@@ -57,7 +57,10 @@ func (file *BuildFile) downloadRuleName(module *resolve.Module,  structured bool
 	return file.assignName(module.Name, "_dl", structured)
 }
 
-func toInstall(pkg *resolve.Package) string {
+func toInstall(part *resolve.ModulePart, pkg *resolve.Package) string {
+	if wildCard := part.GetWildcardImport(pkg); wildCard != "" {
+		return wildCard
+	}
 	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
 	if install == "" {
 		return "."
@@ -110,11 +113,13 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 				dlRule = NewRule(file.File, "go_mod_download", file.downloadRuleName(m, structured))
 				file.ModDownloadRules[m] = dlRule
 			}
-			dlRule.SetAttr("version", NewStringExpr(m.Version))
 			dlRule.SetAttr("module", NewStringExpr(m.Name))
-			dlRule.SetAttr("licences", NewStringList(m.Licence))
-		} else if ok {
-			file.File.DelRules(dlRule.Kind(), dlRule.Name())
+			if m.Version != "" {
+				dlRule.SetAttr("version", NewStringExpr(m.Version))
+			}
+			if m.Licence != "" {
+				dlRule.SetAttr("licences", NewStringList(m.Licence))
+			}
 		}
 
 		for _, part := range m.Parts {
@@ -126,8 +131,6 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 				modRule = NewRule(file.File, "go_module", file.partName(part, structured))
 				file.ModRules[part] = modRule
 			}
-			modRule.DelAttr("version")
-			modRule.DelAttr("download")
 			modRule.DelAttr("install")
 			modRule.DelAttr("deps")
 			modRule.DelAttr("exported_deps")
@@ -136,10 +139,15 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 			modRule.SetAttr("module", NewStringExpr(m.Name))
 
 			if len(m.Parts) > 1 {
+				modRule.DelAttr("version")
 				modRule.SetAttr("download", NewStringExpr(":" + file.downloadRuleName(m, structured)))
 			} else {
-				modRule.SetAttr("licences", NewStringList(m.Licence))
-				modRule.SetAttr("version", NewStringExpr(m.Version))
+				if m.Licence != "" {
+					modRule.SetAttr("licences", NewStringList(m.Licence))
+				}
+				if m.Version != "" {
+					modRule.SetAttr("version", NewStringExpr(m.Version))
+				}
 			}
 
 			installs := make([]string, 0, len(part.Packages))
@@ -147,8 +155,14 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 			var exportedDeps []string
 
 			doneDeps := map[string]struct{}{}
+			doneInstalls := map[string]struct{}{}
+
 			for pkg := range part.Packages {
-				installs = append(installs, toInstall(pkg))
+				i := toInstall(part, pkg)
+				if _, ok := doneInstalls[i]; !ok {
+					installs = append(installs, i)
+					doneInstalls[i] = struct{}{}
+				}
 
 				for _, i := range pkg.Imports {
 					dep := g.Modules.ImportPaths[i]

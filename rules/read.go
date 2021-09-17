@@ -3,6 +3,7 @@ package rules
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tatskaari/go-deps/resolve"
 	"github.com/tatskaari/go-deps/resolve/model"
@@ -79,6 +80,13 @@ func (g *BuildGraph) ReadRules(buildFile string) error {
 			install = []string{"."}
 		}
 		for _, i := range install {
+			// Add these here to be resolved later
+			if strings.HasSuffix(i, "...") {
+				pkgPath := strings.TrimSuffix(strings.TrimSuffix(i, "..."), "/")
+				part.InstallWildCards = append(part.InstallWildCards, pkgPath)
+				continue
+			}
+
 			importPath := filepath.Join(moduleName, i)
 			pkg := g.Modules.GetPackage(importPath)
 			pkg.Module = moduleName
