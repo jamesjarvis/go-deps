@@ -40,15 +40,32 @@ func newResolver(rootModuleName string, config *packages.Config) *resolver {
 	}
 }
 
+func (r *resolver) Import(pkg *Package) *ModulePart {
+	pkgModule, ok := r.ImportPaths[pkg]
+	if ok {
+		return pkgModule
+	}
+
+	module, ok := r.Mods[pkg.Module]
+	if !ok {
+		panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
+	}
+	for _, part := range module.Parts {
+		if part.IsWildcardImport(pkg) {
+			r.ImportPaths[pkg] = part
+			return part
+		}
+	}
+	panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
+}
+
 func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
 	if _, ok := done[pkg]; ok {
 		return false
 	}
 	done[pkg] = struct{}{}
-	pkgModule, ok := r.ImportPaths[pkg]
-	if !ok {
-		panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
-	}
+
+	pkgModule := r.Import(pkg)
 	if module == pkgModule {
 		return true
 	}
@@ -112,7 +129,10 @@ func (r *resolver) addPackageToModuleGraph(done map[*Package]struct{}, pkg *Pack
 	part := r.getOrCreateModulePart(r.GetModule(pkg.Module), pkg)
 	part.Packages[pkg] = struct{}{}
 	r.ImportPaths[pkg] = part
-	part.Modified = true
+
+	if !part.IsWildcardImport(pkg) {
+		part.Modified = true
+	}
 
 	done[pkg] = struct{}{}
 }
@@ -140,6 +160,8 @@ func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
 // UpdateModules resolves a `go get` style wildcard and updates the modules passed in to it
 func UpdateModules(modules *Modules, getPaths []string) error {
 	defer progress.Clear()
+
+
 	pkgs, r, err := load(getPaths)
 	if err != nil {
 		return err
@@ -337,6 +359,16 @@ func (r *resolver) setVersions() error {
 	var moduleNames []string
 	for _, m := range r.Mods {
 		if m.Version != "" {
+			continue
+		}
+
+		modified := false
+		for _, part := range m.Parts {
+			if part.Modified {
+				modified = true
+			}
+		}
+		if !modified {
 			continue
 		}
 
