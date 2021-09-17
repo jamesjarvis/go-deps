@@ -40,24 +40,7 @@ func newResolver(rootModuleName string, config *packages.Config) *resolver {
 	}
 }
 
-func (r *resolver) Import(pkg *Package) *ModulePart {
-	pkgModule, ok := r.ImportPaths[pkg]
-	if ok {
-		return pkgModule
-	}
 
-	module, ok := r.Mods[pkg.Module]
-	if !ok {
-		panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
-	}
-	for _, part := range module.Parts {
-		if part.IsWildcardImport(pkg) {
-			r.ImportPaths[pkg] = part
-			return part
-		}
-	}
-	panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
-}
 
 func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
 	if _, ok := done[pkg]; ok {
@@ -88,7 +71,7 @@ func (r *resolver) getOrCreateModulePart(m *Module, pkg *Package) *ModulePart {
 		done := map[*Package]struct{}{}
 		for _, i := range pkg.Imports {
 			// Check all the imports that leave the current part
-			if r.ImportPaths[i] != part {
+			if r.Import(i) != part {
 				if r.dependsOn(done, i, part) {
 					valid = false
 					break
@@ -161,7 +144,6 @@ func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
 func UpdateModules(modules *Modules, getPaths []string) error {
 	defer progress.Clear()
 
-
 	pkgs, r, err := load(getPaths)
 	if err != nil {
 		return err
@@ -172,6 +154,7 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	done := map[*Package]struct{}{}
 	if modules != nil {
 		for _, pkg := range modules.Pkgs {
+			modules.Import(pkg).Modified = true
 			done[pkg] = struct{}{}
 		}
 	}
@@ -256,7 +239,7 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 				continue
 			}
 			newPkg := r.GetPackage(importName)
-			m := r.GetModule(p.Module.Path)
+			m := r.GetModule(pkg.Module)
 			m.Version = p.Module.Version
 			if p.Module == nil {
 				panic(fmt.Sprintf("no module for %v. Perhaps you need to go get something?", pkg.ImportPath))
@@ -274,6 +257,25 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 		pkg.Resolved = true
 		r.resolve(newPackages)
 	}
+}
+
+func (mods *Modules) Import(pkg *Package) *ModulePart {
+	pkgModule, ok := mods.ImportPaths[pkg]
+	if ok {
+		return pkgModule
+	}
+
+	module, ok := mods.Mods[pkg.Module]
+	if !ok {
+		panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
+	}
+	for _, part := range module.Parts {
+		if part.IsWildcardImport(pkg) {
+			mods.ImportPaths[pkg] = part
+			return part
+		}
+	}
+	panic(fmt.Errorf("no import path for pkg %v", pkg.ImportPath))
 }
 
 // GetPackage gets an existing package or creates a new one
@@ -313,11 +315,13 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
 				m = r.Mods[r.rootModuleName]
 			} else {
-				err = fmt.Errorf("no module found for pkg %v", p.PkgPath)
 				return
 			}
 		} else {
 			m = r.Mods[p.Module.Path]
+		}
+		if !m.IsModified() {
+			return
 		}
 		if m.Licence != "" || m.Name == r.rootModuleName {
 			return
@@ -362,13 +366,7 @@ func (r *resolver) setVersions() error {
 			continue
 		}
 
-		modified := false
-		for _, part := range m.Parts {
-			if part.Modified {
-				modified = true
-			}
-		}
-		if !modified {
+		if !m.IsModified() {
 			continue
 		}
 

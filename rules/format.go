@@ -44,6 +44,9 @@ func (file *BuildFile) assignName(originalPath, suffix string, structured bool) 
 }
 
 func (file *BuildFile) partName(part *resolve.ModulePart, structured bool) string {
+	if part == nil || part.Module == nil {
+		print()
+	}
 	displayIndex := len(part.Module.Parts) - part.Index
 	suffix := ""
 	if displayIndex > 0 {
@@ -165,7 +168,7 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 				}
 
 				for _, i := range pkg.Imports {
-					dep := g.Modules.ImportPaths[i]
+					dep := g.Modules.Import(i)
 					depRuleName := file.partName(dep, structured)
 					if _, ok := doneDeps[depRuleName]; ok || dep.Module == m {
 						continue

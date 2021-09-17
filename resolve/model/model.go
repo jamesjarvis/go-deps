@@ -31,6 +31,15 @@ type Module struct {
 	Parts []*ModulePart
 }
 
+func (m *Module) IsModified() bool {
+	for _, part := range m.Parts {
+		if part.Modified {
+			return true
+		}
+	}
+	return false
+}
+
 // ModulePart essentially corresponds to a `go_module()` rule that compiles some (or all) packages from that module. In
 // most cases, there's one part per module except where we need to split it out to resolve a cycle.
 type ModulePart struct {
