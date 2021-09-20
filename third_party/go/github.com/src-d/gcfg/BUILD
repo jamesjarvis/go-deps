@@ -2,9 +2,9 @@ go_module(
     name = "gcfg",
     install = [
         ".",
-        "types",
-        "token",
         "scanner",
+        "token",
+        "types",
     ],
     licences = ["BSD-3-Clause"],
     module = "github.com/src-d/gcfg",

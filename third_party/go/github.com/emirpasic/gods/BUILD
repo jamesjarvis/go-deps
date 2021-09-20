@@ -1,12 +1,12 @@
 go_module(
     name = "gods",
     install = [
-        "lists/arraylist",
-        "lists",
-        "utils",
-        "trees/binaryheap",
         "containers",
+        "lists",
+        "lists/arraylist",
         "trees",
+        "trees/binaryheap",
+        "utils",
     ],
     licences = ["BSD-2-Clause"],
     module = "github.com/emirpasic/gods",

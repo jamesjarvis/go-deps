@@ -1,13 +1,13 @@
 go_module(
     name = "licenseclassifier",
     install = [
-        "stringclassifier/internal/pq",
-        "stringclassifier/searchset/tokenizer",
+        ".",
         "internal/sets",
         "licenses",
-        "stringclassifier/searchset",
         "stringclassifier",
-        ".",
+        "stringclassifier/internal/pq",
+        "stringclassifier/searchset",
+        "stringclassifier/searchset/tokenizer",
     ],
     licences = ["Apache-2.0"],
     module = "github.com/google/licenseclassifier",

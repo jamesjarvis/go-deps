@@ -1,11 +1,12 @@
 go_module(
     name = "sys",
     install = [
-        "unix",
+        "execabs",
         "internal/unsafeheader",
+        "unix",
     ],
     licences = ["BSD-3-Clause"],
     module = "golang.org/x/sys",
-    version = "v0.0.0-20210514084401-e8d321eab015",
+    version = "v0.0.0-20210917161153-d61c044b1678",
     visibility = ["PUBLIC"],
 )

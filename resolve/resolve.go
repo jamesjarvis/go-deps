@@ -1,6 +1,8 @@
 package resolve
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -149,6 +151,10 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 		return err
 	}
 
+	if r == nil {
+		return nil
+	}
+
 	r.Modules = modules
 
 	done := map[*Package]struct{}{}
@@ -186,9 +192,21 @@ func load(getPaths []string) ([]*packages.Package, *resolver, error) {
 	}
 	r := newResolver(getCurrentModuleName(), config)
 
+
 	pkgs, err := packages.Load(config, getPaths...)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	errBuf := new(bytes.Buffer)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		for _, err := range pkg.Errors {
+			fmt.Fprintln(errBuf, err)
+		}
+	})
+
+	if errString := errBuf.String(); errString != "" {
+		return nil, nil, errors.New(errString)
 	}
 
 	return pkgs, r, nil
@@ -228,7 +246,13 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 			if strings.HasPrefix(p.PkgPath, r.rootModuleName) {
 				pkg.Module = r.rootModuleName
 			} else {
-				panic(fmt.Errorf("no module found for pkg %v", p.PkgPath))
+				var missingPkgs []string
+				for _, pkg := range pkgs {
+					if pkg.Module == nil {
+						missingPkgs = append(missingPkgs, pkg.PkgPath)
+					}
+				}
+				panic(fmt.Errorf("no module found for pkgs %v", missingPkgs))
 			}
 		} else {
 			pkg.Module = p.Module.Path
@@ -243,10 +267,10 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 			m := r.GetModule(pkg.Module)
 			m.Version = p.Module.Version
 			if p.Module == nil {
-				panic(fmt.Sprintf("no module for %v. Perhaps you need to go get something?", pkg.ImportPath))
+				panic(fmt.Sprintf("no module for %v. Perhaps you need to run go mod download?", pkg.ImportPath))
 			}
 			if importedPkg.Module == nil {
-				panic(fmt.Sprintf("no module for imported package %v. Perhaps you need to go get something?", importedPkg.PkgPath))
+				panic(fmt.Sprintf("no module for imported package %v. Perhaps you need to run go mod download?", importedPkg.PkgPath))
 			}
 			if importedPkg.Module.Path != p.Module.Path {
 				pkg.Imports = append(pkg.Imports, newPkg)
@@ -363,10 +387,6 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 func (r *resolver) setVersions() error {
 	var moduleNames []string
 	for _, m := range r.Mods {
-		if m.Version != "" {
-			continue
-		}
-
 		if !m.IsModified() {
 			continue
 		}

@@ -1,12 +1,12 @@
 go_module(
     name = "net",
     install = [
+        "context",
         "internal/socks",
         "proxy",
-        "context",
     ],
     licences = ["BSD-3-Clause"],
     module = "golang.org/x/net",
-    version = "v0.0.0-20201021035429-f5854403a974",
+    version = "v0.0.0-20210917221730-978cfadd31cf",
     visibility = ["PUBLIC"],
 )

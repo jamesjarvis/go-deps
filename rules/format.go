@@ -11,6 +11,7 @@ import (
 
 	"github.com/bazelbuild/buildtools/build"
 	"github.com/bazelbuild/buildtools/edit"
+	"github.com/bazelbuild/buildtools/tables"
 )
 
 var semverRegex = regexp.MustCompile("^v[0-9]+$")
@@ -214,6 +215,7 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 		}
 	}
 
+	tables.IsSortableListArg["install"] = true
 	for path, f := range g.Files {
 		if write {
 			if err := os.MkdirAll(filepath.Dir(f.File.Path), os.ModeDir | 0775); err != nil {
