@@ -44,20 +44,28 @@ func (file *BuildFile) assignName(originalPath, suffix string, structured bool) 
 }
 
 func (file *BuildFile) partName(part *resolve.ModulePart, structured bool) string {
-	if part == nil || part.Module == nil {
-		print()
+	if name, ok := file.partNames[part]; ok {
+		return name
 	}
 	displayIndex := len(part.Module.Parts) - part.Index
 	suffix := ""
 	if displayIndex > 0 {
 		suffix = fmt.Sprintf("_%d", displayIndex)
 	}
-	return file.assignName(part.Module.Name, suffix, structured)
 
+	name := file.assignName(part.Module.Name, suffix, structured)
+	file.partNames[part] = name
+	return name
 }
 
 func (file *BuildFile) downloadRuleName(module *resolve.Module,  structured bool) string {
-	return file.assignName(module.Name, "_dl", structured)
+	if name, ok := file.downloadNames[module]; ok {
+		return name
+	}
+
+	name := file.assignName(module.Name, "_dl", structured)
+	file.downloadNames[module] = name
+	return name
 }
 
 func toInstall(part *resolve.ModulePart, pkg *resolve.Package) string {

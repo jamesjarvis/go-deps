@@ -24,7 +24,6 @@ type Package struct {
 type Module struct {
 	// The module name
 	Name string
-
 	Version string
 	Licence string
 
