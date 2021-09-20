@@ -68,10 +68,7 @@ func (file *BuildFile) downloadRuleName(module *resolve.Module,  structured bool
 	return name
 }
 
-func toInstall(part *resolve.ModulePart, pkg *resolve.Package) string {
-	if wildCard := part.GetWildcardImport(pkg); wildCard != "" {
-		return wildCard
-	}
+func toInstall(pkg *resolve.Package) string {
 	install := strings.Trim(strings.TrimPrefix(pkg.ImportPath, pkg.Module), "/")
 	if install == "" {
 		return "."
@@ -168,8 +165,15 @@ func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error
 			doneDeps := map[string]struct{}{}
 			doneInstalls := map[string]struct{}{}
 
+			for _, i := range part.InstallWildCards {
+				installs = append(installs, i + "/...")
+			}
+
 			for pkg := range part.Packages {
-				i := toInstall(part, pkg)
+				if part.IsWildcardImport(pkg) {
+					continue
+				}
+				i := toInstall(pkg)
 				if _, ok := doneInstalls[i]; !ok {
 					installs = append(installs, i)
 					doneInstalls[i] = struct{}{}

@@ -163,7 +163,7 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	r.resolve(pkgs)
 	r.addPackagesToModules(done)
 
-	if err := r.resolveModifiedPackages(); err != nil {
+	if err := r.resolveModifiedPackages(done); err != nil {
 		return err
 	}
 
@@ -194,11 +194,11 @@ func load(getPaths []string) ([]*packages.Package, *resolver, error) {
 	return pkgs, r, nil
 }
 
-func (r *resolver) resolveModifiedPackages() error {
+func (r *resolver) resolveModifiedPackages(done map[*Package]struct{}) error {
 	var modifiedPackages []string
 	for _, m := range r.Mods {
-		for _, part := range m.Parts {
-			if part.Modified {
+		if m.IsModified() {
+			for _, part := range m.Parts {
 				for pkg := range part.Packages {
 					if !pkg.Resolved {
 						modifiedPackages = append(modifiedPackages, pkg.ImportPath)
@@ -214,6 +214,7 @@ func (r *resolver) resolveModifiedPackages() error {
 	}
 
 	r.resolve(pkgs)
+	r.addPackagesToModules(done)
 	return nil
 }
 

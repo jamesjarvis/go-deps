@@ -1,10 +1,12 @@
 package resolve
 
 import (
-	. "github.com/jamesjarvis/go-deps/resolve/model"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	. "github.com/tatskaari/go-deps/resolve/model"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDependsOn(t *testing.T) {
