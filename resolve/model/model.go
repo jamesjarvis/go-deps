@@ -24,11 +24,19 @@ type Package struct {
 type Module struct {
 	// The module name
 	Name string
-
 	Version string
 	Licence string
 
 	Parts []*ModulePart
+}
+
+func (m *Module) IsModified() bool {
+	for _, part := range m.Parts {
+		if part.Modified {
+			return true
+		}
+	}
+	return false
 }
 
 // ModulePart essentially corresponds to a `go_module()` rule that compiles some (or all) packages from that module. In
