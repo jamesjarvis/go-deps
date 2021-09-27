@@ -13,3 +13,12 @@ go_library(
         "//third_party/go/golang.org/x/mod",
     ],
 )
+
+go_test(
+    name = "resolve_test",
+    srcs = ["resolve_test.go"],
+    deps = [
+        ":resolve",
+        "//third_party/go/github.com/stretchr/testify:testify",
+    ],
+)
