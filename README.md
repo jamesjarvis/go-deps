@@ -33,6 +33,8 @@ Note: go-deps works best with a `go.mod`.
 First, install the module with `go get github.com/example/module/...`, then simply run `go-deps -w -m github.com/example/module/...`.
 To add the `go_module()` rules into separate `BUILD` files for each module, pass the `--structured, -s` flag. 
 
+Go deps works on the same package wildcards as `go get` or `go list`, so make sure your wildcard includes all the packages you want to use. 
+
 ```
 NAME:
    please-go-get - Add a Go Module to an existing Please Monorepo
