@@ -1,61 +1,53 @@
 # Go-Deps
 
-The goal of this project is to build a migration tool to convert a [Please](https://github.com/thought-machine/please)
-based repo using deprecated `go_get` rules to use the now standard `go_module` rules.
+This tool is used to help maintian your `go_module()` rules in a [Please](https://please.build) project.
 
-The difference between please and bazel is that please requires the user to specify the module dependencies,
-which can be a little bit annoying.
+# Features
 
-## Rough idea
+Go-deps can be used to updates existing mdoules to newer version, or add new modules to your project. It 
+works by parsing your existing BUILD files in your third party folder (by default `third_party/go/BUILD`, 
+and updating them non-destructively. 
 
-The rough idea of this project is to have two modes:
+Go-deps has two modes of operation. It can generate a flat BUILD file, e.g. `third_party/go/BUILD`, or it
+can split out each module into it's own build file e.g. `third_party/go/github.com/example/module/BUILD`.
+That later can be very useful to improve maintainabilty in larger mono-repos, especially if you use `OWNER`
+files to assign reviewers to branches of the source tree. 
 
-1. Please just add this module to the project
-   - Basically just run a binary, passing in the specified module + version + optionally the name for it
-   - This will then parse the existing build files to check if it already exists, and then add this module + it's
-     dependencies to the repo.
-   - The idea is that in order to find out the dependencies of a particular module, it will run `go get` (or `go mod download` idk)
-     and then cd into the cache directory and run `go list -m -json all` on that stuff, to work out what the dependencies are.
-2. Please just convert the existing go_get definitions into go_modules (should theoretically just call the above mentioned binary).
+# Installation
 
-## Current Progress
+To install this in your project, add the following to your project:
 
-Currently, we are at step 1.5, ie: we can pass in a module + optionally version and it will resolve the dependencies
-for it and it's dependencies:
-
-```bash
-itis@whatitis go-deps % go run cmd/main.go -m github.com/hashicorp/go-hclog
-Please Go Get v0.0.1
-So, you want to add "github.com/hashicorp/go-hclog"?
-Congrats, you just downloaded "github.com/hashicorp/go-hclog@v0.16.2"
-2021/08/04 23:22:56 Dependencies change! We started with github.com/mattn/go-isatty@v0.0.8 and now have github.com/mattn/go-isatty@v0.0.10
-2021/08/04 23:22:57 Dependencies change! We started with golang.org/x/sys@v0.0.0-20190222072716-a9d3bda3a223 and now have golang.org/x/sys@v0.0.0-20191008105621-543471e840be
-2021/08/04 23:22:57 Synced github.com/mattn/go-isatty@v0.0.8 --> github.com/mattn/go-isatty@v0.0.10
-MODULE: github.com/hashicorp/go-hclog
- VERSION: v0.16.2
-  github.com/hashicorp/go-hclog@v0.16.2
-  |
-  |---- github.com/fatih/color@v1.7.0
-  |---- github.com/mattn/go-colorable@v0.1.4
-  |---- github.com/mattn/go-isatty@v0.0.10
-  |---- github.com/stretchr/testify@v1.2.2
-MODULE: github.com/fatih/color
- VERSION: v1.7.0
-  github.com/fatih/color@v1.7.0
-MODULE: github.com/mattn/go-colorable
- VERSION: v0.1.4
-  github.com/mattn/go-colorable@v0.1.4
-  |
-  |---- github.com/mattn/go-isatty@v0.0.10
-MODULE: github.com/mattn/go-isatty
- VERSION: v0.0.10
-  github.com/mattn/go-isatty@v0.0.10
-  |
-  |---- golang.org/x/sys@v0.0.0-20191008105621-543471e840be
-MODULE: github.com/stretchr/testify
- VERSION: v1.2.2
-  github.com/stretchr/testify@v1.2.2
-MODULE: golang.org/x/sys
- VERSION: v0.0.0-20191008105621-543471e840be
-  golang.org/x/sys@v0.0.0-20191008105621-543471e840be
 ```
+GO_DEPS_VERSION = < version here, check https://github.com/Tatskaari/go-deps/releases >
+
+remote_file(
+    name = "go-deps",
+    binary = True,
+    url = f"https://github.com/Tatskaari/go-deps/releases/download/{GO_DEPS_VERSION}/go-deps",
+)
+```
+
+# Usage
+Note: go-deps works best with a `go.mod`.
+
+First, install the module with `go get github.com/example/module/...`, then simply run `go-deps -w -m github.com/example/module/...`.
+To add the `go_module()` rules into separate `BUILD` files for each module, pass the `--structured, -s` flag. 
+
+```
+NAME:
+   please-go-get - Add a Go Module to an existing Please Monorepo
+
+USAGE:
+   go-deps [global options] command [command options] [arguments...]
+
+COMMANDS:
+   help, h  Shows a list of commands or help for one command
+
+GLOBAL OPTIONS:
+   --module value, -m value  Module to add
+   --third_party value       The third party folder to write rules to (default: third_party/go)
+   --write, -w               Whether to update the BUILD file(s), or just print to stdout (default: false)
+   --structured, -s          Whether to put each module in a directory matching the module path, or write all module to a single file. (default: false)
+   --help, -h                show help (default: false)
+```
+
