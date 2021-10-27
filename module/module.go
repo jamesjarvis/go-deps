@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"text/template"
@@ -107,17 +107,8 @@ func (m *Module) GetDownloadName() string {
 }
 
 // GetBuildPath returns the path to the please BUILD file where this module is defined.
-func (m *Module) GetBuildPath() string {
-	splitPath := strings.Split(m.Path, "/")
-	pathMinusEnd := strings.Join(splitPath[:len(splitPath)-1], "/")
-	if splitPath[0] == "github.com" {
-		pathMinusEnd = strings.Join(splitPath[:2], "/")
-	}
-	currentDir, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%s/third_party/go/%s/BUILD", currentDir, pathMinusEnd)
+func (m *Module) GetBuildPath(thirdParty string) string {
+	return filepath.Join(thirdParty, filepath.Dir(m.Path), "BUILD")
 }
 
 // GetFullyQualifiedName returns the please build target for this module.
