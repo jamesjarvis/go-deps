@@ -4,13 +4,13 @@ This tool is used to help maintian your `go_module()` rules in a [Please](https:
 
 # Features
 
-Go-deps can be used to updates existing mdoules to newer version, or add new modules to your project. It 
+Go-deps can be used to update existing modules to newer version, or add new modules to your project. It 
 works by parsing your existing BUILD files in your third party folder (by default `third_party/go/BUILD`, 
 and updating them non-destructively. 
 
 Go-deps has two modes of operation. It can generate a flat BUILD file, e.g. `third_party/go/BUILD`, or it
-can split out each module into it's own build file e.g. `third_party/go/github.com/example/module/BUILD`.
-That later can be very useful to improve maintainabilty in larger mono-repos, especially if you use `OWNER`
+can split out each module into its own build file e.g. `third_party/go/github.com/example/module/BUILD`.
+That later can be very useful to improve maintainability in larger mono-repos, especially if you use `OWNER`
 files to assign reviewers to branches of the source tree. 
 
 # Installation
