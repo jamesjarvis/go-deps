@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/tatskaari/go-deps/resolve/driver"
+	"github.com/tatskaari/go-deps/resolve/knownimports"
+	"golang.org/x/tools/go/packages"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +15,6 @@ import (
 	"github.com/google/go-licenses/licenses"
 	"github.com/tatskaari/go-deps/progress"
 	. "github.com/tatskaari/go-deps/resolve/model"
-
-	"golang.org/x/tools/go/packages"
 )
 
 type Modules struct {
@@ -173,9 +174,9 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 		return err
 	}
 
-	if err := r.setVersions(); err != nil {
-		return err
-	}
+	//if err := r.setVersions(); err != nil {
+	//	return err
+	//}
 
 	if err := r.setLicence(pkgs); err != nil {
 		return err
@@ -189,6 +190,7 @@ func load(getPaths []string) ([]*packages.Package, *resolver, error) {
 
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
+		Driver: driver.NewPleaseDriver("plz", "third_party/go"), //TODO(jpoole): don't hardcode
 	}
 	r := newResolver(getCurrentModuleName(), config)
 
@@ -238,6 +240,9 @@ func (r *resolver) resolveModifiedPackages(done map[*Package]struct{}) error {
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
 	for _, p := range pkgs {
+		if p.Module != nil {
+			r.GetModule(p.Module.Path).Version = p.Module.Version
+		}
 		if len(p.GoFiles) + len(p.OtherFiles) == 0 {
 			continue
 		}
@@ -260,12 +265,10 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 
 		newPackages := make([]*packages.Package, 0, len(p.Imports))
 		for importName, importedPkg := range p.Imports {
-			if _, ok := KnownImports[importName]; ok {
+			if knownimports.IsKnown(importName) {
 				continue
 			}
 			newPkg := r.GetPackage(importName)
-			m := r.GetModule(pkg.Module)
-			m.Version = p.Module.Version
 			if p.Module == nil {
 				panic(fmt.Sprintf("no module for %v. Perhaps you need to run go mod download?", pkg.ImportPath))
 			}
@@ -371,7 +374,6 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 
 		path, e := licenses.Find(pkgDir, c)
 		if e != nil {
-			err = fmt.Errorf("failed to find licence for %v in %v: %v", m.Name, pkgDir, err)
 			return
 		}
 		name, _, e := c.Identify(path)
