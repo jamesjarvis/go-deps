@@ -80,7 +80,7 @@ func (driver *pleaseDriver) pkgInfo(id string) (*packageInfo, error) {
 	}, nil
 }
 
-// loadPattern will load a package wildcard into driver.packages
+// loadPattern will load a package wildcard into driver.packages, walking the directory tree if necessary
 func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 	walk := strings.HasSuffix(pattern, "...")
 
@@ -106,7 +106,7 @@ func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 				return err
 			}
 
-			if err := driver.parsePackage(info, nil); err != nil {
+			if err := driver.loadPackage(info, nil); err != nil {
 				if _, ok := err.(*build.NoGoError); ok || strings.HasPrefix(err.Error(), "no buildable Go source files in ") {
 					return nil
 				}
@@ -117,12 +117,12 @@ func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 		})
 		return roots, err
 	} else {
-		return []string{info.id}, driver.parsePackage(info, nil)
+		return []string{info.id}, driver.loadPackage(info, nil)
 	}
 }
 
-// parsePackage will parse a go package's sources to find out what it imports and load them into driver.packages
-func (driver *pleaseDriver) parsePackage(info *packageInfo, from []string) error {
+// loadPackage will parse a go package's sources to find out what it imports and load them into driver.packages
+func (driver *pleaseDriver) loadPackage(info *packageInfo, from []string) error {
 	if _, ok := driver.packages[info.id]; ok {
 		return nil
 	}
@@ -147,7 +147,7 @@ func (driver *pleaseDriver) parsePackage(info *packageInfo, from []string) error
 		if err != nil {
 			return fmt.Errorf("%v %v", err, from)
 		}
-		if err := driver.parsePackage(info, append(from, info.id)); err != nil {
+		if err := driver.loadPackage(info, append(from, info.id)); err != nil {
 			return fmt.Errorf("%v %v", err, from)
 		}
 	}

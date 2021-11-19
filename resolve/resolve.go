@@ -4,16 +4,17 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/tatskaari/go-deps/resolve/driver"
-	"github.com/tatskaari/go-deps/resolve/knownimports"
-	"golang.org/x/tools/go/packages"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/go-licenses/licenses"
+	"golang.org/x/tools/go/packages"
+
 	"github.com/tatskaari/go-deps/progress"
+	"github.com/tatskaari/go-deps/resolve/driver"
+	"github.com/tatskaari/go-deps/resolve/knownimports"
 	. "github.com/tatskaari/go-deps/resolve/model"
 )
 

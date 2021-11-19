@@ -32,6 +32,7 @@ func (driver *pleaseDriver) ensureDownloaded(mod *packages.Module) (srcRoot stri
 		return path, nil
 	}
 
+	// Try downloading using Please first
 	if target, ok := driver.pleaseModules[mod.Path]; ok {
 		if target.built {
 			return target.srcRoot, nil
@@ -47,11 +48,7 @@ func (driver *pleaseDriver) ensureDownloaded(mod *packages.Module) (srcRoot stri
 		return target.srcRoot, nil
 	}
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
+	// Create a dummy go.mod to avoid us accidentally updating the main repo
 	if _, err := os.Lstat("plz-out/godeps/go.mod"); err != nil {
 		if os.IsNotExist(err) {
 			cmd := exec.Command("go", "mod", "init", "dummy")
@@ -73,14 +70,21 @@ func (driver *pleaseDriver) ensureDownloaded(mod *packages.Module) (srcRoot stri
 		Error string
 	}{}
 
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	// Downlaod using `go mod download`
 	cmd := exec.Command("go", "mod", "download", "--json", key)
-	cmd.Env = append(cmd.Env, fmt.Sprintf("GOPATH=%s", filepath.Join(oldWd, "plz-out/godeps/go")))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GOPATH=%s", filepath.Join(wd, "plz-out/godeps/go")))
 	cmd.Dir = "plz-out/godeps"
 	progress.PrintUpdate("Downloading %s...", key)
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
-		json.Unmarshal(out, &resp)
+		// Ignore this. Parsing the body is best effort to get the error message out.
+		_ = json.Unmarshal(out, &resp)
 		errorString := string(out)
 		if resp.Error != "" {
 			s, e := strconv.Unquote(resp.Error)
