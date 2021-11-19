@@ -1,6 +1,15 @@
 go_library(
     name = "driver",
-    srcs = ["please_driver.go", "module.go"],
-    deps = ["//third_party/go/golang.org/x/tools:tools", "//third_party/go/golang.org/x/net", "//resolve/knownimports"],
+    srcs = [
+        "module.go",
+        "please_driver.go",
+    ],
     visibility = ["//resolve/..."],
+    deps = [
+        "//progress",
+        "//resolve/knownimports",
+        "//third_party/go/golang.org/x/mod",
+        "//third_party/go/golang.org/x/net",
+        "//third_party/go/golang.org/x/tools",
+    ],
 )

@@ -1,28 +1,34 @@
 package driver
 
 import (
-	"github.com/tatskaari/go-deps/resolve/knownimports"
+	"fmt"
 	"go/build"
-	"golang.org/x/tools/go/packages"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
+
+	"github.com/tatskaari/go-deps/resolve/knownimports"
 )
 
-const modcacheDir = "plz-out/godeps/modcache"
 const dirPerms = os.ModeDir | 0775
 
 var client = http.DefaultClient
 
 type pleaseDriver struct {
-	moduleProxy      string
-	thirdPartyFolder string
-	pleasePath       string
-	knownModules     []*packages.Module
+	moduleProxy        string
+	thirdPartyFolder   string
+	pleasePath         string
+	moduleRequirements map[string]*packages.Module
+	knownModules 	   []string
+	pleaseModules      map[string]*goModDownloadRule
 
 	packages map[string]*packages.Package
+
+	downloaded map[string]string
 }
 
 type packageInfo struct {
@@ -33,12 +39,19 @@ type packageInfo struct {
 }
 
 func NewPleaseDriver(please, thirdPartyFolder string) *pleaseDriver {
-	proxy := os.Getenv("GOPROXY") //TODO(jpoole): split this on , and get rid of direct
+	//TODO(jpoole): split this on , and get rid of direct
+	proxy := os.Getenv("GOPROXY")
 	if proxy == "" {
 		proxy = "https://proxy.golang.org"
 	}
 
-	return &pleaseDriver{pleasePath: please, thirdPartyFolder: thirdPartyFolder, moduleProxy: proxy}
+	return &pleaseDriver{
+		pleasePath: please,
+		thirdPartyFolder: thirdPartyFolder,
+		moduleProxy:      proxy,
+		downloaded:       map[string]string{},
+		pleaseModules:    map[string]*goModDownloadRule{},
+	}
 }
 
 func (driver *pleaseDriver) pkgInfo(id string) (*packageInfo, error) {
@@ -47,10 +60,12 @@ func (driver *pleaseDriver) pkgInfo(id string) (*packageInfo, error) {
 		return &packageInfo{isSDKPackage: true, id: id, srcRoot: srcDir, pkgDir: filepath.Join(srcDir, id)}, nil
 	}
 
-	mod, err := driver.resolveModuleForPackage(id)
+	modName, err := driver.resolveModuleForPackage(id)
 	if err != nil {
 		return nil, err
 	}
+
+	mod := driver.moduleRequirements[modName]
 
 	srcRoot, err := driver.ensureDownloaded(mod)
 	if err != nil {
@@ -65,7 +80,8 @@ func (driver *pleaseDriver) pkgInfo(id string) (*packageInfo, error) {
 	}, nil
 }
 
-func (driver *pleaseDriver) importPattern(pattern string) ([]string, error) {
+// loadPattern will load a package wildcard into driver.packages
+func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 	walk := strings.HasSuffix(pattern, "...")
 
 	info, err := driver.pkgInfo(strings.TrimSuffix(pattern, "/..."))
@@ -77,6 +93,9 @@ func (driver *pleaseDriver) importPattern(pattern string) ([]string, error) {
 		var roots []string
 
 		err := filepath.Walk(info.pkgDir, func(path string, i fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 			if !i.IsDir() {
 				return nil
 			}
@@ -87,8 +106,8 @@ func (driver *pleaseDriver) importPattern(pattern string) ([]string, error) {
 				return err
 			}
 
-			if err :=  driver.importPackage(info); err != nil {
-				if _, ok := err.(*build.NoGoError); ok {
+			if err := driver.parsePackage(info, nil); err != nil {
+				if _, ok := err.(*build.NoGoError); ok || strings.HasPrefix(err.Error(), "no buildable Go source files in ") {
 					return nil
 				}
 				return err
@@ -98,23 +117,24 @@ func (driver *pleaseDriver) importPattern(pattern string) ([]string, error) {
 		})
 		return roots, err
 	} else {
-		return []string{info.id}, driver.importPackage(info)
+		return []string{info.id}, driver.parsePackage(info, nil)
 	}
 }
 
-func (driver *pleaseDriver) importPackage(info *packageInfo) error {
+// parsePackage will parse a go package's sources to find out what it imports and load them into driver.packages
+func (driver *pleaseDriver) parsePackage(info *packageInfo, from []string) error {
 	if _, ok := driver.packages[info.id]; ok {
 		return nil
 	}
 
 	pkg, err := build.ImportDir(info.pkgDir, build.ImportComment)
 	if err != nil {
-		return err
+		return fmt.Errorf("%v %v", err, from)
 	}
 
 	wd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("%v %v", err, from)
 	}
 
 	imports := map[string]*packages.Package{}
@@ -125,10 +145,10 @@ func (driver *pleaseDriver) importPackage(info *packageInfo) error {
 		imports[i] = &packages.Package{ID: i}
 		info, err := driver.pkgInfo(i)
 		if err != nil {
-			return err
+			return fmt.Errorf("%v %v", err, from)
 		}
-		if err := driver.importPackage(info); err != nil {
-			return err
+		if err := driver.parsePackage(info, append(from, info.id)); err != nil {
+			return fmt.Errorf("%v %v", err, from)
 		}
 	}
 
@@ -150,19 +170,24 @@ func (driver *pleaseDriver) importPackage(info *packageInfo) error {
 
 func (driver *pleaseDriver) Resolve(cfg *packages.Config, patterns ...string) (*packages.DriverResponse, error) {
 	driver.packages = map[string]*packages.Package{}
-	os.RemoveAll("plz-out/godeps")
+	driver.moduleRequirements = map[string]*packages.Module{}
+
+	if err := os.MkdirAll("plz-out/godeps", dirPerms); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
+	pkgWildCards, err := driver.resolveGetModules(patterns)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := driver.loadPleaseModules(); err != nil {
+		return nil, err
+	}
 
 	resp := new(packages.DriverResponse)
-	for _, p := range patterns {
-		parts := strings.Split(p, "@")
-		if len(parts) > 1 {
-			mod, err := driver.resolveModuleForPackage(parts[0])
-			if err != nil {
-				return nil, err
-			}
-			mod.Version = parts[1]
-		}
-		pkgs, err := driver.importPattern(parts[0])
+	for _, p := range pkgWildCards {
+		pkgs, err := driver.loadPattern(p)
 		if err != nil {
 			return nil, err
 		}

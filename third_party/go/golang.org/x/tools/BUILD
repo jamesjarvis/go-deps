@@ -6,6 +6,7 @@ go_mod_download(
 
 go_module(
     name = "tools",
+    download = ":my_fork",
     install = [
         "go/gcexportdata",
         "go/internal/gcimporter",
@@ -22,7 +23,6 @@ go_module(
     ],
     licences = ["BSD-3-Clause"],
     module = "golang.org/x/tools",
-    download = ":my_fork",
     visibility = ["PUBLIC"],
     deps = [
         "//third_party/go/golang.org/x/mod",

@@ -43,8 +43,6 @@ func newResolver(rootModuleName string, config *packages.Config) *resolver {
 	}
 }
 
-
-
 func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
 	if _, ok := done[pkg]; ok {
 		return false
@@ -161,7 +159,6 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	done := map[*Package]struct{}{}
 	if modules != nil {
 		for _, pkg := range modules.Pkgs {
-			modules.Import(pkg).Modified = true
 			done[pkg] = struct{}{}
 		}
 	}
@@ -173,10 +170,6 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	if err := r.resolveModifiedPackages(done); err != nil {
 		return err
 	}
-
-	//if err := r.setVersions(); err != nil {
-	//	return err
-	//}
 
 	if err := r.setLicence(pkgs); err != nil {
 		return err
@@ -190,7 +183,7 @@ func load(getPaths []string) ([]*packages.Package, *resolver, error) {
 
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
-		Driver: driver.NewPleaseDriver("plz", "third_party/go"), //TODO(jpoole): don't hardcode
+		Driver: driver.NewPleaseDriver("/home/jpoole/please/plz-out/bin/src/please", "third_party/go"), //TODO(jpoole): don't hardcode
 	}
 	r := newResolver(getCurrentModuleName(), config)
 
@@ -384,44 +377,4 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 		m.Licence = name
 	})
 	return
-}
-
-func (r *resolver) setVersions() error {
-	var moduleNames []string
-	for _, m := range r.Mods {
-		if !m.IsModified() {
-			continue
-		}
-
-		if m.Name == r.rootModuleName {
-			continue
-		}
-		moduleNames = append(moduleNames, m.Name)
-	}
-	if len(moduleNames) == 0 {
-		return nil
-	}
-
-	cmd := exec.Command("go", append([]string{"list", "-m"}, moduleNames...)...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		panic(fmt.Errorf("failed to get module versions: %v\n%v", err, string(out)))
-	}
-
-	vs := strings.Split(string(out), "\n")
-	for i, moduleVersion := range vs {
-		if moduleVersion == "" {
-			continue
-		}
-
-		progress.PrintUpdate("Setting versions... %d of %d modules.", i+1, len(vs))
-
-		parts := strings.Split(moduleVersion, " ")
-		if len(parts) != 2 {
-			panic(fmt.Sprintf("invalid module version tuple: %v", moduleVersion))
-		}
-		r.Mods[parts[0]].Version = parts[1]
-	}
-
-	return nil
 }

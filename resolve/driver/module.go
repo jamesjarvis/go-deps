@@ -1,196 +1,196 @@
 package driver
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/html"
-	"golang.org/x/tools/go/packages"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
+	"golang.org/x/tools/go/packages"
+
+	"github.com/tatskaari/go-deps/progress"
 )
 
-func findGoImportMetaTag(body io.ReadCloser) string {
-	page, _ := io.ReadAll(body)
-	node, err := html.Parse(bytes.NewReader(page))
-	if err != nil {
-		return ""
-	}
-
-	node = node.FirstChild.FirstChild
-	var head *html.Node
-	for {
-		if node.Data == "head" {
-			head = node
-			break
-		}
-		node = node.NextSibling
-		if node == nil {
-			return ""
-		}
-	}
-	if head == nil {
-		return ""
-	}
-
-	node = head.FirstChild
-	for {
-		if node.Data == "meta" {
-			content := ""
-			isGoImport := false
-			for _, attr := range node.Attr {
-				if attr.Key == "name" && attr.Val == "go-import" {
-					isGoImport = true
-				} else if attr.Key == "content" {
-					content = attr.Val
-				}
-			}
-			if isGoImport {
-				parts := strings.Split(content, " git ")
-				if len(parts) == 2 {
-					return parts[1]
-				}
-				return ""
-			}
-		}
-		node = node.NextSibling
-		if node == nil {
-			return ""
-		}
-	}
+// goModDownloadRule represents a `go_mod_download()` rule from Please BUILD files
+type goModDownloadRule struct {
+	label   string
+	built   bool
+	srcRoot string
 }
 
+// ensureDownloaded ensures the a module has been downloaded and returns the filepath to its source root
 func (driver *pleaseDriver) ensureDownloaded(mod *packages.Module) (srcRoot string, err error) {
-	dir := filepath.Join(modcacheDir, mod.Path + "@" + mod.Version)
-	if _, err := os.Stat(dir); err == nil {
-		return dir, nil
+	key := fmt.Sprintf("%v@%v", mod.Path, mod.Version)
+	if path, ok := driver.downloaded[key]; ok {
+		return path, nil
 	}
 
-	if err := os.MkdirAll(dir, dirPerms); err != nil {
-		return "", err
-	}
-
-	defer func() {
+	if target, ok := driver.pleaseModules[mod.Path]; ok {
+		if target.built {
+			return target.srcRoot, nil
+		}
+		cmd := exec.Command(driver.pleasePath, "build", target.label)
+		progress.PrintUpdate("Building %s...", target.label)
+		out, err := cmd.CombinedOutput()
 		if err != nil {
-			os.RemoveAll(dir)
-		}
-	}()
-
-	url := fmt.Sprintf("%s/%s/@v/%s.zip", driver.moduleProxy, mod.Path, mod.Version)
-	dest := modcacheDir
-	stripPrefix := ""
-	// Download from github if we can when we're using a psudoversion
-	if !strings.HasPrefix(mod.Version, "v") {
-		githubRepo := fmt.Sprintf("https://%s", mod.Path)
-		if !strings.HasPrefix(githubRepo, "https://github.com") {
-			resp, err := client.Get(githubRepo)
-			if err != nil {
-				return "", err
-			}
-
-			if goImport := findGoImportMetaTag(resp.Body); goImport != "" {
-				githubRepo = goImport
-			} else {
-				// follow any redirects from the server
-				githubRepo = resp.Request.URL.String()
-			}
+			return "", fmt.Errorf("failed to build %v: %v\n%v", target.label, err, string(out))
 		}
 
-		if strings.HasPrefix(githubRepo, "https://github.com") {
-			url = fmt.Sprintf("%s/archive/%s.zip", githubRepo, mod.Version)
-			dest = filepath.Join(modcacheDir, mod.Path + "@" + mod.Version)
-			stripPrefix = fmt.Sprintf("%s-%s", filepath.Base(githubRepo), mod.Version)
-		}
+		target.built = true
+		return target.srcRoot, nil
 	}
 
-	resp, err := client.Get(strings.ToLower(url))
+	oldWd, err := os.Getwd()
 	if err != nil {
 		return "", err
+	}
+
+	if _, err := os.Lstat("plz-out/godeps/go.mod"); err != nil {
+		if os.IsNotExist(err) {
+			cmd := exec.Command("go", "mod", "init", "dummy")
+			cmd.Dir = "plz-out/godeps"
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("failed to create dummy mod: %v\n%v", err, string(out))
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	var resp = struct {
+		Path string
+		GoMod string
+		Version string
+		Dir string
+		Error string
+	}{}
+
+	cmd := exec.Command("go", "mod", "download", "--json", key)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GOPATH=%s", filepath.Join(oldWd, "plz-out/godeps/go")))
+	cmd.Dir = "plz-out/godeps"
+	progress.PrintUpdate("Downloading %s...", key)
+	out, err := cmd.CombinedOutput()
+
+	if err != nil {
+		json.Unmarshal(out, &resp)
+		errorString := string(out)
+		if resp.Error != "" {
+			s, e := strconv.Unquote(resp.Error)
+			if e == nil {
+				errorString = s
+			}
+		}
+		return "", fmt.Errorf("failed to download module %v: %v\n%v", key, err, errorString)
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return "", err
+	}
+
+	driver.downloaded[key] = resp.Dir
+
+	return resp.Dir, nil
+}
+
+// getGoMod returns the go mod for a modules from the proxy
+func (driver *pleaseDriver) getGoMod(mod, ver string) (*modfile.File, error) {
+	file := fmt.Sprintf("%s/%s/@v/%s.mod", driver.moduleProxy, strings.ToLower(mod), ver)
+	resp, err := client.Get(file)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %v downloading module %v@%v at %v\n%v", resp.StatusCode, mod.Path, mod.Version, url, string(body))
+		return nil, fmt.Errorf("%v %v: \n%v", file, resp.StatusCode, string(body))
 	}
 
-	zipFilePath := filepath.Join(modcacheDir, "downloads", fmt.Sprintf("%s@%s/mod.zip", mod.Path, mod.Version))
-	if err := os.MkdirAll(filepath.Dir(zipFilePath), dirPerms);  err != nil && !os.IsExist(err) {
-		return "", err
-	}
-	zipFile, err := os.Create(zipFilePath)
-	if err != nil {
-		return "", err
-	}
-	if _, err := io.Copy(zipFile, resp.Body); err != nil {
-		return "", err
-	}
-	zipFile.Close()
+	return modfile.Parse(file, body, nil)
 
-	zipReader, err := zip.OpenReader(zipFilePath)
-	if err != nil {
-		return "", err
-	}
-	defer zipReader.Close()
-
-	if err := unpackZip(zipReader, stripPrefix, dest); err != nil {
-		return "", fmt.Errorf("failed to unpack zip: %v", err)
-	}
-
-	return dir, nil
 }
 
-func unpackZip(r *zip.ReadCloser, stripPrefix string, dest string) error {
-	for _, f := range r.File {
-		// Store filename/path for returning and using later on
-		fpath := filepath.Join(dest, strings.TrimPrefix(f.Name, stripPrefix + "/"))
-
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(fpath, os.ModePerm); err != nil {
-				return err
-			}
-			continue
+// determineVersionRequirements loads the version requirements from the go.mod files for each module, and applies
+// the minimum valid version algorithm.
+func (driver *pleaseDriver) determineVersionRequirements(mod, ver string) error {
+	if oldVer, ok := driver.moduleRequirements[mod]; ok {
+		// if we already require at this version or higher, we don't need to do anything
+		if semver.Compare(ver, oldVer.Version) <= 0 {
+			return nil
 		}
+	}
 
-		// Make File
-		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			return err
-		}
+	if mod == "" {
+		panic(mod)
+	}
 
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+	progress.PrintUpdate("Resolving %v@%v", mod, ver)
+
+	modFile, err := driver.getGoMod(mod, ver)
+	if err != nil {
+		ver := fmt.Sprintf("%v-incompatible", ver)
+		modFile, err = driver.getGoMod(mod, ver)
 		if err != nil {
 			return err
 		}
+	}
 
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
+	driver.moduleRequirements[mod] = &packages.Module{Path: mod, Version: ver}
+	for _, req := range modFile.Require {
+		if err := driver.determineVersionRequirements(req.Mod.Path, req.Mod.Version); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (driver *pleaseDriver) getKnownMods() error {
-	if driver.knownModules != nil {
-		return nil
-	}
-	driver.knownModules = []*packages.Module{}
+// resolveGetModules resolves the get wildcards with versions, and loads them into the driver. It returns the package
+// parts of the get patterns e.g. github.com/example/module/...@v1.0.0 -> github.com/example/module/...
+func (driver *pleaseDriver) resolveGetModules(patterns []string) ([]string, error) {
+	pkgWildCards := make([]string, 0, len(patterns))
+	for _, p := range patterns {
+		parts := strings.Split(p, "@")
+		pkgPart := parts[0]
+		pkgWildCards = append(pkgWildCards, pkgPart)
 
+		mod, err := driver.resolveModuleForPackage(pkgPart)
+		if err != nil {
+			return nil, err
+		}
+		if len(parts) > 1 && strings.HasPrefix(parts[1], "v") {
+			if err := driver.determineVersionRequirements(mod, parts[1]); err != nil {
+				return nil, err
+			}
+		} else {
+			ver, err := driver.getLatestVersion(mod)
+			if err != nil {
+				return nil, err
+			}
+			if err := driver.determineVersionRequirements(mod, ver); err != nil {
+				return nil, err
+			}
+		}
+
+	}
+	return pkgWildCards, nil
+}
+
+// loadPleaseModules queries the Please build graph and loads in any modules defined there. It applies the minimum valid
+// version algorithm.
+func (driver *pleaseDriver) loadPleaseModules() error {
 	out := &bytes.Buffer{}
 	stdErr := &bytes.Buffer{}
-	cmd := exec.Command(driver.pleasePath, "query", "print", "-l", "go_module:", fmt.Sprintf("//%s/...", driver.thirdPartyFolder))
+	cmd := exec.Command(driver.pleasePath, "query", "print", "-i", "go_module", "--json", fmt.Sprintf("//%s/...", driver.thirdPartyFolder))
 	cmd.Stdout = out
 	cmd.Stderr = stdErr
 	err := cmd.Run()
@@ -198,62 +198,123 @@ func (driver *pleaseDriver) getKnownMods() error {
 		return fmt.Errorf("failed to query known modules: %v\n%v\n%v", err, out, stdErr)
 	}
 
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
-		parts := strings.Split(line, "@")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid response listing known modules: %v", line)
+	res := map[string]struct{
+		Outs []string
+		Labels []string
+	}{}
+
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		return err
+	}
+
+	for label, target := range res {
+		rule := &goModDownloadRule{
+			label:   label,
+			srcRoot: filepath.Join("plz-out/gen", target.Outs[0]),
+		}
+		for _, l := range target.Labels {
+			if strings.HasPrefix(l, "go_module:") {
+				parts := strings.Split(strings.TrimPrefix(l, "go_module:"), "@")
+				if len(parts) != 2 {
+					return fmt.Errorf("invalid go_module label: %v", l)
+				}
+
+				mod := &packages.Module{Path: parts[0], Version: strings.TrimSpace(parts[1])}
+				oldMod, ok := driver.moduleRequirements[mod.Path]
+
+				// Only add the Please version of this module if it's greater than or equal to the version requirement
+				if !ok || semver.Compare(oldMod.Version, mod.Version) <= 0 {
+					driver.moduleRequirements[mod.Path] = mod
+					driver.pleaseModules[mod.Path] = rule
+				}
+			}
 		}
 
-		driver.knownModules = append(driver.knownModules, &packages.Module{Path: parts[0], Version: strings.TrimSpace(parts[1])})
 	}
 	return nil
 }
 
-func (driver *pleaseDriver) findKnownModule(pattern string) *packages.Module {
+// findKnownModule checks a list of discovered modules to see if the package pattern exists there
+func (driver *pleaseDriver) findKnownModule(pattern string) string {
+	longestMatch := ""
 	for _, mod := range driver.knownModules {
-		if strings.HasPrefix(pattern, mod.Path) {
+		if pattern == mod {
 			return mod
 		}
+		if strings.HasPrefix(pattern, mod + "/") {
+			if len(mod) > len(longestMatch) {
+				longestMatch = mod
+			}
+		}
 	}
-	return nil
+	return longestMatch
 }
 
-func (driver *pleaseDriver) resolveModuleForPackage(pattern string) (*packages.Module, error) {
-	if err := driver.getKnownMods(); err != nil {
-		return nil, err
+
+// getLatestVersion returns the latest versin for a mdoule from the proxy
+func (driver *pleaseDriver) getLatestVersion(modulePath string) (string, error) {
+	if modulePath == "" {
+		panic(modulePath)
 	}
+	resp, err := client.Get(fmt.Sprintf("%s/%s/@latest", driver.moduleProxy, modulePath))
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode != 200 {
+		return "", nil
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	version := struct {
+		Version string
+	}{}
+	if err := json.Unmarshal(b, &version); err != nil {
+		return "", err
+	}
+	return version.Version, nil
+}
+
+// resolveModuleForPackage tries to determine the module name for a given package pattern
+func (driver *pleaseDriver) resolveModuleForPackage(pattern string) (string, error) {
 	mod := driver.findKnownModule(pattern)
-	if mod != nil {
+	if mod != "" {
 		return mod, nil
 	}
 	modulePath := strings.ToLower(strings.TrimSuffix(pattern,"/..."))
 
 	for modulePath != "." {
-		// TODO(jpoole): we should be aware of a few common module formats
-		resp, err := client.Get(fmt.Sprintf("%s/%s/@latest", driver.moduleProxy, modulePath))
-		if err != nil {
-			return nil, err
+		if strings.HasPrefix(pattern, "github.com") {
+			parts := strings.Split(pattern, "/")
+
+			if len(parts) < 3 {
+				return "", fmt.Errorf("can't determine module for package %v", pattern)
+			}
+			modPart := 3
+			if len(parts) >= 4 && strings.HasPrefix(parts[3], "v") {
+				modPart++
+			}
+			mod := filepath.Join(parts[:modPart]...)
+			driver.knownModules  = append(driver.knownModules, mod)
+			return mod, nil
 		}
 
-		if resp.StatusCode != 200 {
+		// Try and get the latest version to determine if we've found the module part yet
+		version, err := driver.getLatestVersion(modulePath)
+		if err != nil {
+			return "", err
+		}
+		if version == "" {
 			modulePath = filepath.Dir(modulePath)
 			continue
 		}
 
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		version := struct {
-			Version string
-		}{}
-		if err := json.Unmarshal(b, &version); err != nil {
-			return nil, err
-		}
-		mod = &packages.Module{Path: modulePath, Version: version.Version}
-		driver.knownModules = append(driver.knownModules, mod)
-		return mod, nil
+		driver.knownModules = append(driver.knownModules, modulePath)
+		return modulePath, nil
 	}
-	return nil, fmt.Errorf("couldn't find module for package %v", pattern)
+	return "", fmt.Errorf("couldn't find module for package %v", pattern)
 }
