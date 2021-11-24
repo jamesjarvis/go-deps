@@ -7,6 +7,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 
+	"github.com/tatskaari/go-deps/resolve/driver"
 	"github.com/tatskaari/go-deps/resolve"
 	"github.com/tatskaari/go-deps/rules"
 )
@@ -51,7 +52,7 @@ func main() {
 		}
 	}
 
-	err := resolve.UpdateModules(moduleGraph.Modules, opts.Args.Packages)
+	err := resolve.UpdateModules(moduleGraph.Modules, opts.Args.Packages, driver.NewPleaseDriver(opts.PleasePath, opts.ThirdPartyFolder))
 	if err != nil {
 		log.Fatal(err)
 	}

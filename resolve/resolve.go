@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/tatskaari/go-deps/progress"
-	"github.com/tatskaari/go-deps/resolve/driver"
 	"github.com/tatskaari/go-deps/resolve/knownimports"
 	. "github.com/tatskaari/go-deps/resolve/model"
 )
@@ -143,10 +142,10 @@ func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
 }
 
 // UpdateModules resolves a `go get` style wildcard and updates the modules passed in to it
-func UpdateModules(modules *Modules, getPaths []string) error {
+func UpdateModules(modules *Modules, getPaths []string, goListDriver packages.Driver) error {
 	defer progress.Clear()
 
-	pkgs, r, err := load(getPaths)
+	pkgs, r, err := load(getPaths, goListDriver)
 	if err != nil {
 		return err
 	}
@@ -179,12 +178,12 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	return nil
 }
 
-func load(getPaths []string) ([]*packages.Package, *resolver, error) {
+func load(getPaths []string, driver packages.Driver) ([]*packages.Package, *resolver, error) {
 	progress.PrintUpdate( "Analysing packages...")
 
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
-		Driver: driver.NewPleaseDriver("/home/jpoole/please/plz-out/bin/src/please", "third_party/go"), //TODO(jpoole): don't hardcode
+		Driver: driver,
 	}
 	r := newResolver(getCurrentModuleName(), config)
 

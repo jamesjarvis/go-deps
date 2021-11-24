@@ -65,7 +65,10 @@ func (driver *pleaseDriver) pkgInfo(id string) (*packageInfo, error) {
 		return nil, err
 	}
 
-	mod := driver.moduleRequirements[modName]
+	mod, ok := driver.moduleRequirements[modName]
+	if !ok {
+		return nil, fmt.Errorf("no module requirement for %v", modName)
+	}
 
 	srcRoot, err := driver.ensureDownloaded(mod)
 	if err != nil {
@@ -100,13 +103,18 @@ func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 				return nil
 			}
 
+			if strings.HasPrefix(i.Name(), ".") {
+				return fs.SkipDir
+			}
+
 			id := filepath.Join(info.mod.Path, strings.TrimPrefix(path, info.srcRoot))
 			info, err := driver.pkgInfo(strings.TrimSuffix(id, "/..."))
 			if err != nil {
 				return err
 			}
 
-			if err := driver.loadPackage(info, nil); err != nil {
+			fmt.Println("loading", info.id)
+			if err := driver.loadPackage(info); err != nil {
 				if _, ok := err.(*build.NoGoError); ok || strings.HasPrefix(err.Error(), "no buildable Go source files in ") {
 					return nil
 				}
@@ -117,24 +125,24 @@ func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 		})
 		return roots, err
 	} else {
-		return []string{info.id}, driver.loadPackage(info, nil)
+		return []string{info.id}, driver.loadPackage(info)
 	}
 }
 
 // loadPackage will parse a go package's sources to find out what it imports and load them into driver.packages
-func (driver *pleaseDriver) loadPackage(info *packageInfo, from []string) error {
+func (driver *pleaseDriver) loadPackage(info *packageInfo) error {
 	if _, ok := driver.packages[info.id]; ok {
 		return nil
 	}
 
 	pkg, err := build.ImportDir(info.pkgDir, build.ImportComment)
 	if err != nil {
-		return fmt.Errorf("%v %v", err, from)
+		return fmt.Errorf("%v from %v", err, info.id)
 	}
 
 	wd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("%v %v", err, from)
+		return fmt.Errorf("%v from %v", err, info.id)
 	}
 
 	imports := map[string]*packages.Package{}
@@ -143,12 +151,12 @@ func (driver *pleaseDriver) loadPackage(info *packageInfo, from []string) error 
 			return nil
 		}
 		imports[i] = &packages.Package{ID: i}
-		info, err := driver.pkgInfo(i)
+		newInfo, err := driver.pkgInfo(i)
 		if err != nil {
-			return fmt.Errorf("%v %v", err, from)
+			return fmt.Errorf("%v from %v from %v", err, i, info.id)
 		}
-		if err := driver.loadPackage(info, append(from, info.id)); err != nil {
-			return fmt.Errorf("%v %v", err, from)
+		if err := driver.loadPackage(newInfo); err != nil {
+			return fmt.Errorf("%v from %v", err, info.id)
 		}
 	}
 
