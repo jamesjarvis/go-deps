@@ -113,7 +113,6 @@ func (driver *pleaseDriver) loadPattern(pattern string) ([]string, error) {
 				return err
 			}
 
-			fmt.Println("loading", info.id)
 			if err := driver.loadPackage(info); err != nil {
 				if _, ok := err.(*build.NoGoError); ok || strings.HasPrefix(err.Error(), "no buildable Go source files in ") {
 					return nil

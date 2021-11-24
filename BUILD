@@ -3,6 +3,7 @@ go_binary(
     srcs = ["main.go"],
     deps = [
         "//resolve",
+        "//resolve/driver",
         "//rules",
         "//third_party/go/github.com/jessevdk/go-flags",
     ],

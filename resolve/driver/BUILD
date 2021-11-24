@@ -4,7 +4,7 @@ go_library(
         "module.go",
         "please_driver.go",
     ],
-    visibility = ["//resolve/..."],
+    visibility = ["PUBLIC"],
     deps = [
         "//progress",
         "//resolve/knownimports",
