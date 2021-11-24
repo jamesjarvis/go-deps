@@ -10,10 +10,11 @@ import (
 	"strings"
 
 	"github.com/google/go-licenses/licenses"
-	"github.com/tatskaari/go-deps/progress"
-	. "github.com/tatskaari/go-deps/resolve/model"
-
 	"golang.org/x/tools/go/packages"
+
+	"github.com/tatskaari/go-deps/progress"
+	"github.com/tatskaari/go-deps/resolve/knownimports"
+	. "github.com/tatskaari/go-deps/resolve/model"
 )
 
 type Modules struct {
@@ -41,8 +42,6 @@ func newResolver(rootModuleName string, config *packages.Config) *resolver {
 		config: config,
 	}
 }
-
-
 
 func (r *resolver) dependsOn(done map[*Package]struct{}, pkg *Package, module *ModulePart) bool {
 	if _, ok := done[pkg]; ok {
@@ -143,10 +142,10 @@ func (r *resolver) addPackagesToModules(done map[*Package]struct{}) {
 }
 
 // UpdateModules resolves a `go get` style wildcard and updates the modules passed in to it
-func UpdateModules(modules *Modules, getPaths []string) error {
+func UpdateModules(modules *Modules, getPaths []string, goListDriver packages.Driver) error {
 	defer progress.Clear()
 
-	pkgs, r, err := load(getPaths)
+	pkgs, r, err := load(getPaths, goListDriver)
 	if err != nil {
 		return err
 	}
@@ -160,7 +159,6 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	done := map[*Package]struct{}{}
 	if modules != nil {
 		for _, pkg := range modules.Pkgs {
-			modules.Import(pkg).Modified = true
 			done[pkg] = struct{}{}
 		}
 	}
@@ -173,10 +171,6 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 		return err
 	}
 
-	if err := r.setVersions(); err != nil {
-		return err
-	}
-
 	if err := r.setLicence(pkgs); err != nil {
 		return err
 	}
@@ -184,11 +178,12 @@ func UpdateModules(modules *Modules, getPaths []string) error {
 	return nil
 }
 
-func load(getPaths []string) ([]*packages.Package, *resolver, error) {
+func load(getPaths []string, driver packages.Driver) ([]*packages.Package, *resolver, error) {
 	progress.PrintUpdate( "Analysing packages...")
 
 	config := &packages.Config{
 		Mode: packages.NeedImports|packages.NeedModule|packages.NeedName|packages.NeedFiles,
+		Driver: driver,
 	}
 	r := newResolver(getCurrentModuleName(), config)
 
@@ -238,6 +233,9 @@ func (r *resolver) resolveModifiedPackages(done map[*Package]struct{}) error {
 
 func (r *resolver) resolve(pkgs []*packages.Package) {
 	for _, p := range pkgs {
+		if p.Module != nil {
+			r.GetModule(p.Module.Path).Version = p.Module.Version
+		}
 		if len(p.GoFiles) + len(p.OtherFiles) == 0 {
 			continue
 		}
@@ -260,12 +258,10 @@ func (r *resolver) resolve(pkgs []*packages.Package) {
 
 		newPackages := make([]*packages.Package, 0, len(p.Imports))
 		for importName, importedPkg := range p.Imports {
-			if _, ok := KnownImports[importName]; ok {
+			if knownimports.IsKnown(importName) {
 				continue
 			}
 			newPkg := r.GetPackage(importName)
-			m := r.GetModule(pkg.Module)
-			m.Version = p.Module.Version
 			if p.Module == nil {
 				panic(fmt.Sprintf("no module for %v. Perhaps you need to run go mod download?", pkg.ImportPath))
 			}
@@ -371,7 +367,6 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 
 		path, e := licenses.Find(pkgDir, c)
 		if e != nil {
-			err = fmt.Errorf("failed to find licence for %v in %v: %v", m.Name, pkgDir, err)
 			return
 		}
 		name, _, e := c.Identify(path)
@@ -382,44 +377,4 @@ func (r *resolver) setLicence(pkgs []*packages.Package) (err error) {
 		m.Licence = name
 	})
 	return
-}
-
-func (r *resolver) setVersions() error {
-	var moduleNames []string
-	for _, m := range r.Mods {
-		if !m.IsModified() {
-			continue
-		}
-
-		if m.Name == r.rootModuleName {
-			continue
-		}
-		moduleNames = append(moduleNames, m.Name)
-	}
-	if len(moduleNames) == 0 {
-		return nil
-	}
-
-	cmd := exec.Command("go", append([]string{"list", "-m"}, moduleNames...)...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		panic(fmt.Errorf("failed to get module versions: %v\n%v", err, string(out)))
-	}
-
-	vs := strings.Split(string(out), "\n")
-	for i, moduleVersion := range vs {
-		if moduleVersion == "" {
-			continue
-		}
-
-		progress.PrintUpdate("Setting versions... %d of %d modules.", i+1, len(vs))
-
-		parts := strings.Split(moduleVersion, " ")
-		if len(parts) != 2 {
-			panic(fmt.Sprintf("invalid module version tuple: %v", moduleVersion))
-		}
-		r.Mods[parts[0]].Version = parts[1]
-	}
-
-	return nil
 }

@@ -1,6 +1,5 @@
-package resolve
+package knownimports
 
-// TODO(jpoole): these could come from a .importconfig which might be cleaner
 var KnownImports = map[string]struct{}{
 	"archive/tar": {},
 	"archive/zip": {},
@@ -202,4 +201,9 @@ var KnownImports = map[string]struct{}{
 	"unicode/utf16": {},
 	"unicode/utf8": {},
 	"unsafe": {},
+}
+
+func IsKnown(i string) bool {
+	_, ok := KnownImports[i]
+	return ok
 }

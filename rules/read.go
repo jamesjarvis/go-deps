@@ -66,7 +66,6 @@ func (g *BuildGraph) ReadRules(buildFile string) error {
 	}
 
 	g.Files[buildFile] = file
-
 	for _, rule := range file.File.Rules("go_module") {
 		moduleName := rule.AttrString("module")
 		module := g.Modules.GetModule(moduleName)

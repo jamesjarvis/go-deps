@@ -110,7 +110,7 @@ func cannonicalise(name, modpath, thirdParty string, structured bool) string {
 	return "//" + filepath.Join(thirdParty, modpath)
 }
 
-func (g *BuildGraph) Save(structured, write bool, thirdPartyFolder string) error {
+func (g *BuildGraph) Format(structured, write bool, thirdPartyFolder string) error {
 	for _, m := range g.Modules.Mods {
 		file, err := g.file(m, structured, thirdPartyFolder)
 		if err != nil {
